@@ -5,3 +5,15 @@ build/
 __pycache__/
 .lock-waf*
 waf3-*/
+# NAM core vendorisé : on ne garde que le nécessaire au build
+libs/NeuralAmpModelerCore/example_audio/
+libs/NeuralAmpModelerCore/example_models/
+libs/NeuralAmpModelerCore/media/
+libs/NeuralAmpModelerCore/docs/
+libs/NeuralAmpModelerCore/build_inline/
+libs/NeuralAmpModelerCore/tools/
+libs/NeuralAmpModelerCore/Dependencies/AudioDSPTools/
+libs/NeuralAmpModelerCore/Dependencies/eigen/test/
+libs/NeuralAmpModelerCore/Dependencies/eigen/doc/
+libs/NeuralAmpModelerCore/Dependencies/eigen/bench/
+libs/NeuralAmpModelerCore/Dependencies/eigen/demos/

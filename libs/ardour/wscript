@@ -535,10 +535,11 @@ def build(bld):
         # rapide. nam_core.dll est buildée sur la machine du user (i9-12900K, AVX2+FMA) pour
         # cette même machine : AVX2/FMA sans souci de portabilité. Eigen reste interne à la DLL
         # (l'API du wrapper est float*/string) -> pas de problème d'ABI/alignement cross-DLL.
+        # AVX2/FMA/F16C = x86 uniquement ; sur arm64 (macOS Apple Silicon) Eigen utilise NEON.
         cxxflags = [ bld.env['compiler_flags_dict']['pic'], '-std=gnu++20', '-w',
                      '-DNOMINMAX', '-DWIN32_LEAN_AND_MEAN', '-DNAM_SAMPLE_FLOAT',
-                     '-O3', '-ffast-math', '-finline-functions', '-funroll-loops',
-                     '-mavx2', '-mfma', '-mf16c' ])
+                     '-O3', '-ffast-math', '-finline-functions', '-funroll-loops' ]
+                   + (['-mavx2', '-mfma', '-mf16c'] if PLATFORM.machine().lower() in ('amd64', 'x86_64') else []))
     obj.use += ['nam_core']
 
     avx_sources = []

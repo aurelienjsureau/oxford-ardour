@@ -36,7 +36,8 @@ jobs:
           BP=$(brew --prefix)
           KEGS="glibmm@2.66 libsigc++@2 cairomm@1.14 pangomm@2.46 libxml2 libarchive curl readline"
           PKG="$BP/lib/pkgconfig:$BP/share/pkgconfig"
-          INC="-I$BP/include"
+          # DISABLE_VISIBILITY: neutralise les alias ELF de ydk/ytk (non supportés par Mach-O)
+          INC="-DDISABLE_VISIBILITY -I$BP/include"
           LIB="-L$BP/lib"
           for k in $KEGS; do
             P=$(brew --prefix $k)

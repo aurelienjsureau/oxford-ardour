@@ -1,0 +1,186 @@
+# Copyright (C) YEAR "Paul Davis"
+# This file is distributed under the same license as the PACKAGE package.
+#
+# Pavel Fric <pavelfric@seznam.cz>, 2013, 2020.
+# SPDX-FileCopyrightText: 2023, 2025 Martin Vlk <martin@vlkk.cz>
+msgid ""
+msgstr ""
+"Project-Id-Version: \n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-01-24 15:59+0100\n"
+"PO-Revision-Date: 2025-12-26 15:32+0100\n"
+"Last-Translator: Martin Vlk <martin@vlkk.cz>\n"
+"Language-Team: Czech <translation-team-cs@lists.sourceforge.net>\n"
+"Language: cs\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"X-Generator: Lokalize 23.08.5\n"
+
+#: actions.cc:219
+msgid "Unknown action name: %1/%2"
+msgstr "Neznámý název činnosti: %1/%2"
+
+#: action_model.cc:56 action_model.cc:171
+msgid "Disabled"
+msgstr "Zakázáno"
+
+#: action_model.cc:83
+msgid "Main_menu"
+msgstr "Main_menu"
+
+#: action_model.cc:85
+msgid "JACK"
+msgstr "JACK"
+
+#: action_model.cc:87
+msgid "redirectmenu"
+msgstr "redirectmenu"
+
+#: action_model.cc:89
+msgid "Editor_menus"
+msgstr "Editor_menus"
+
+#: action_model.cc:91
+msgid "RegionList"
+msgstr "RegionList"
+
+#: action_model.cc:93
+msgid "ProcessorMenu"
+msgstr "ProcessorMenu"
+
+#: bindings.cc:519
+msgid "Escape"
+msgstr "Escape"
+
+#: bindings.cc:951 bindings.cc:953
+msgid "Window"
+msgstr "Window"
+
+#: bindings.cc:951
+msgid " (Categorized)"
+msgstr "(Zařazeno)"
+
+#: bindings.cc:953
+msgid " (Alphabetical)"
+msgstr "(Abecedně)"
+
+#: bindings.cc:969
+msgid "Uncategorized"
+msgstr "Nezařazeno"
+
+#: cursors.cc:81
+msgid "cursor hotspots info file %1 has an error on line %2"
+msgstr "soubor s údaji o kontrolním bodu ukazatele %1 má chybu na řádku %2"
+
+#: emscale.cc:52
+msgid "ABCDEFGHIJLKMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+msgstr "ABCDEFGHIJLKMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+
+#: gtk_ui.cc:135
+msgid "Log"
+msgstr "Zápis"
+
+#: gtk_ui.cc:432
+msgid ""
+"\n"
+"\n"
+"Shortcut: "
+msgstr ""
+"\n"
+"\n"
+"Klávesová zkratka: "
+
+#: gtk_ui.cc:724
+msgid "Press To Exit"
+msgstr "Stisknout pro ukončení"
+
+#: gtk_ui.cc:761
+msgid "I'm sorry %1, I can't do that"
+msgstr "Bohužel to nelze udělat, %1"
+
+#: keyboard.cc:80
+msgid "Command"
+msgstr "Command"
+
+#: keyboard.cc:85 keyboard.cc:146
+msgid "Control"
+msgstr "Control"
+
+#: keyboard.cc:90 keyboard.cc:120 keyboard.cc:156 keyboard.cc:186
+msgid "Key|Shift"
+msgstr "Key|Shift"
+
+#: keyboard.cc:95
+msgid "Option"
+msgstr "Volba"
+
+#: keyboard.cc:100
+msgid "Middle Click (or Ctrl+Alt+Click)"
+msgstr "Kliknout prostředním (nebo Ctrl+Alt+Click)"
+
+#: keyboard.cc:105
+msgid "Cmd+Click (or Middle-Click)"
+msgstr "Cmd+Klik (nebo Prostřední-Click)"
+
+#: keyboard.cc:110
+msgid "Cmd"
+msgstr "Cmd"
+
+#: keyboard.cc:115 keyboard.cc:176
+msgid "Ctrl"
+msgstr "Ctrl"
+
+#: keyboard.cc:125
+msgid "Opt"
+msgstr "Opt"
+
+#: keyboard.cc:151 keyboard.cc:181
+msgid "Alt"
+msgstr "Alt"
+
+#: keyboard.cc:161
+msgid "Windows"
+msgstr "Windows"
+
+#: keyboard.cc:166 keyboard.cc:171
+msgid "Middle-Click"
+msgstr "Prostřední-Klik"
+
+#: keyboard.cc:191
+msgid "Win"
+msgstr "Win"
+
+#: keyboard.cc:204
+msgid "CapsLock"
+msgstr "CapsLock"
+
+#: keyboard.cc:210
+msgid "Lock"
+msgstr "Lock"
+
+#: keyboard.cc:301 keyboard.cc:785
+msgid "Unknown"
+msgstr "Neznámý"
+
+#: keyboard.cc:795
+msgid "key bindings file not found at \"%2\" or contains errors."
+msgstr ""
+"Soubor s přiřazením kláves \"%2\"se nepodařilo najít, nebo obsahuje chyby."
+
+#: keyboard.cc:821
+msgid "Keyboard binding found without a name"
+msgstr "Nalezeno přiřazení kláves bez názvu"
+
+#: keyboard.cc:853
+msgid "Cannot save key bindings to %1"
+msgstr "Přiřazení kláves nelze uložit do %1"
+
+#: keyboard.cc:868
+msgid "Cannot rename your own keybinding file (%1)"
+msgstr "Nelze přejmenovat váš vlastní soubor s přiřazením kláves (%1)"
+
+#: textviewer.cc:32
+msgid "Close"
+msgstr "Zavřít"

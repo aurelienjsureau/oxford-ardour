@@ -1,0 +1,17 @@
+#!/usr/bin/env python
+
+import os
+
+def configure(conf):
+    pass
+
+def build(bld):
+    scripts = bld.path.ant_glob ('*.lua', excl=['^_*'])
+    bld.install_files (os.path.join(bld.env['DATADIR'], 'scripts'), scripts)
+    # Scripts persos Trident prefixes '_' (exclus du glob ci-dessus) a installer
+    # explicitement pour qu'ils soient livres avec chaque build/installeur.
+    bld.install_files (os.path.join(bld.env['DATADIR'], 'scripts'),
+                       ['_route_to_mixbus.lua'])
+
+def options(opt):
+    pass

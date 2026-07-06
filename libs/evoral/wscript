@@ -1,0 +1,147 @@
+#!/usr/bin/env python
+from waflib.extras import autowaf as autowaf
+from waflib import Options
+import os
+
+# Version of this package (even if built as a child)
+EVORAL_VERSION = '0.0.0'
+
+# Library version (UNIX style major, minor, micro)
+# major increment <=> incompatible changes
+# minor increment <=> compatible changes (additions)
+# micro increment <=> no interface changes
+# Version history:
+#   0.0.0 = 0,0,0
+EVORAL_LIB_VERSION = '0.0.0'
+
+def options(opt):
+    opt.add_option('--test', action='store_true', default=False, dest='build_tests',
+                    help="Build unit tests")
+    opt.add_option('--test-coverage', action='store_true', default=False, dest='test_coverage',
+                    help="Use gcov to test for code coverage")
+    opt.add_option('--internal-shared-libs', action='store_true', default=True, dest='internal_shared_libs',
+                   help='Build internal libs as shared libraries')
+
+def configure(conf):
+    #autowaf.display_header('Evoral Configuration')
+
+    if not autowaf.is_child():
+        autowaf.check_pkg(conf, 'libpbd-4', uselib_store='LIBPBD', atleast_version='4.0.0', mandatory=True)
+
+    # Boost headers
+
+    conf.env['BUILD_TESTS'] = Options.options.build_tests
+    conf.env['TEST_COVERAGE'] = Options.options.test_coverage
+
+    if Options.options.internal_shared_libs:
+        conf.define('INTERNAL_SHARED_LIBS', 1)
+    #autowaf.display_msg(conf, "Unit tests", str(conf.env['BUILD_TESTS']))
+    #print
+
+def build(bld):
+    # Headers
+    #bld.install_files('${INCLUDEDIR}/evoral', 'evoral/*.h')
+    #bld.install_files('${INCLUDEDIR}/evoral', 'evoral/*.h')
+
+    # Pkgconfig file
+    #autowaf.build_pc(bld, 'EVORAL', EVORAL_VERSION, 'GLIBMM GTHREAD')
+
+    libsmf = bld(features = 'c cstlib')
+    libsmf.source = '''
+            libsmf/smf.c
+            libsmf/smf_decode.c
+            libsmf/smf_load.c
+            libsmf/smf_save.c
+            libsmf/smf_tempo.c
+    '''
+    libsmf.export_includes = ['.']
+    libsmf.defines      = ['SMF_VERSION="1.2"', 'LIBSMF_DLL_EXPORTS']
+    libsmf.includes     = ['./src']
+    libsmf.name         = 'libsmf'
+    libsmf.target       = 'smf'
+    libsmf.uselib       = 'GLIB'
+    libsmf.use          = [ 'libtemporal' ]
+    libsmf.install_path = None
+    if bld.env['build_target'] != 'mingw' and bld.env['build_target'] != 'msvc':
+        libsmf.cxxflags     = [ bld.env['compiler_flags_dict']['pic'] ]
+        libsmf.cflags       = [ bld.env['compiler_flags_dict']['pic'] ]
+
+    lib_source = '''
+            Control.cc
+            ControlList.cc
+            ControlSet.cc
+            Curve.cc
+            Event.cc
+            Note.cc
+            SMF.cc
+            Sequence.cc
+            debug.cc
+    '''
+
+    # Library
+    if bld.is_defined ('INTERNAL_SHARED_LIBS'):
+        obj              = bld.shlib(features = 'c cxx cshlib cxxshlib', source=lib_source)
+        # DLL exports for this library
+        obj.defines      = [ 'LIBEVORAL_DLL_EXPORTS' ]
+    else:
+        obj              = bld.stlib(features = 'c cxx cstlib cxxstlib', source=lib_source)
+        obj.cxxflags     = [ bld.env['compiler_flags_dict']['pic'] ]
+        obj.cflags       = [ bld.env['compiler_flags_dict']['pic'] ]
+        obj.defines      = [ ]
+
+    obj.export_includes = ['.']
+    obj.includes       = ['.', './src']
+    obj.name           = 'libevoral'
+    obj.target         = 'evoral'
+    obj.uselib         = 'GLIBMM GTHREAD SMF XML LIBPBD OSX'
+    obj.use            = 'libsmf libpbd'
+    obj.vnum           = EVORAL_LIB_VERSION
+    obj.install_path   = bld.env['LIBDIR']
+    obj.defines       += [ 'PACKAGE="libevoral"' ]
+
+    # disable unit-tests -- build is broken with nutempo
+    if bld.env['BUILD_TESTS'] and bld.is_defined('HAVE_CPPUNIT'):
+        # Static library (for unit test code coverage)
+        obj = bld(features = 'cxx cstlib')
+        obj.source         = lib_source
+        obj.export_includes = ['.']
+        obj.includes       = ['.', './src']
+        obj.name           = 'libevoral_static'
+        obj.target         = 'evoral_static'
+        obj.uselib         = 'GLIBMM GTHREAD SMF XML LIBPBD'
+        obj.use            = 'libsmf libpbd'
+        obj.vnum           = EVORAL_LIB_VERSION
+        obj.install_path   = ''
+        if bld.env['TEST_COVERAGE']:
+            obj.linkflags      = ['--coverage']
+            obj.cflags         = ['--coverage']
+            obj.cxxflags       = ['--coverage']
+        obj.defines        = ['PACKAGE="libevoral"']
+
+        # Unit tests
+        obj              = bld(features = 'cxx cxxprogram')
+        obj.source       = [
+                'test/SequenceTest.cc',
+                'test/SMFTest.cc',
+                'test/NoteTest.cc',
+                'test/CurveTest.cc',
+                'test/testrunner.cc',
+                ]
+        obj.includes     = ['.', './src']
+        obj.use          = 'libevoral_static'
+        obj.uselib       = 'GLIBMM GTHREAD SMF XML LIBPBD OSX CPPUNIT'
+        obj.target       = 'run-tests'
+        obj.name         = 'libevoral-tests'
+        obj.install_path = ''
+        obj.defines      = ['PACKAGE="libevoraltest"']
+        if bld.env['TEST_COVERAGE']:
+            obj.linkflags      = ['--coverage']
+            obj.cflags         = ['--coverage']
+            obj.cxxflags       = ['--coverage']
+
+def test(ctx):
+    autowaf.pre_test(ctx, 'evoral')
+    print(os.getcwd())
+    os.environ['EVORAL_TEST_PATH'] = os.path.abspath('../test/testdata/')
+    autowaf.run_tests(ctx, 'evoral', ['./run-tests'])
+    autowaf.post_test(ctx, 'evoral')

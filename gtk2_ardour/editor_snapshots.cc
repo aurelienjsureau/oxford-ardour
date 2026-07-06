@@ -1,0 +1,252 @@
+/*
+ * Copyright (C) 2009-2012 Carl Hetherington <carl@carlh.net>
+ * Copyright (C) 2009-2012 David Robillard <d@drobilla.net>
+ * Copyright (C) 2009-2016 Paul Davis <paul@linuxaudiosystems.com>
+ * Copyright (C) 2014-2019 Robin Gareus <robin@gareus.org>
+ * Copyright (C) 2018 Ben Loftis <ben@harrisonconsoles.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
+
+
+#include <glib.h>
+#include "pbd/gstdio_compat.h"
+
+#include <glibmm.h>
+
+#include <ytkmm/liststore.h>
+
+#include "ardour/filename_extensions.h"
+#include "ardour/session.h"
+#include "ardour/session_state_utils.h"
+#include "ardour/session_directory.h"
+
+#include "widgets/choice.h"
+#include "widgets/prompter.h"
+
+#include "editor_snapshots.h"
+#include "ardour_ui.h"
+#include "utils.h"
+
+#include "pbd/i18n.h"
+
+using namespace std;
+using namespace PBD;
+using namespace Gtk;
+using namespace ARDOUR;
+using namespace ARDOUR_UI_UTILS;
+
+EditorSnapshots::EditorSnapshots ()
+{
+	_snapshot_model = ListStore::create (_columns);
+	_snapshot_display.set_model (_snapshot_model);
+	_snapshot_display.append_column ("", _columns.current_active);
+	_snapshot_display.append_column (_("Snapshot (dbl-click to load)"), _columns.visible_name);
+	_snapshot_display.append_column (_("Modified Date"), _columns.time_formatted);
+	_snapshot_display.set_size_request (75, -1);
+	_snapshot_display.set_headers_visible (true);
+	_snapshot_display.set_reorderable (false);
+	_scroller.add (_snapshot_display);
+	_scroller.set_policy (Gtk::POLICY_NEVER, Gtk::POLICY_AUTOMATIC);
+
+	_snapshot_display.signal_button_press_event().connect (sigc::mem_fun (*this, &EditorSnapshots::button_press), false);
+}
+
+void
+EditorSnapshots::set_session (Session* s)
+{
+	SessionHandlePtr::set_session (s);
+
+	redisplay ();
+}
+
+bool
+EditorSnapshots::button_press (GdkEventButton* ev)
+{
+	if (ev->button == 3) {
+		/* Right-click on the snapshot list.
+		 * Work out which snapshot it was over.
+		 */
+		Gtk::TreeModel::Path path;
+		Gtk::TreeViewColumn* col;
+		int cx;
+		int cy;
+		_snapshot_display.get_path_at_pos ((int) ev->x, (int) ev->y, path, col, cx, cy);
+		if (!path) {
+			return false;
+		}
+		_snapshot_display.get_selection()->select (path);
+		Gtk::TreeModel::iterator iter = _snapshot_model->get_iter (path);
+		if (iter) {
+			Gtk::TreeModel::Row row = *iter;
+			popup_context_menu (ev->button, ev->time, row[_columns.real_name]);
+		}
+		return true;
+	} else if (ev->type == GDK_2BUTTON_PRESS) {
+		Gtk::TreeModel::Path path;
+		Gtk::TreeViewColumn* col;
+		int cx;
+		int cy;
+		string snap_name;
+		_snapshot_display.get_path_at_pos ((int) ev->x, (int) ev->y, path, col, cx, cy);
+		if (!path) {
+			return false;
+		}
+		Gtk::TreeModel::iterator iter = _snapshot_model->get_iter (path);
+		if (iter) {
+			Gtk::TreeModel::Row row = *iter;
+			snap_name = row[_columns.real_name];
+		}
+
+		if (snap_name.length() == 0) {
+			return false;
+		}
+
+		if (_session->snap_name() == snap_name) {
+			return false;
+		}
+
+		ArdourDialog confirm (_("Load Snapshot?"), true);
+		Gtk::Label* m = Gtk::manage (new Gtk::Label (string_compose ("%1\n%2", _("Do you want to load this snapshot?"), snap_name)));
+		confirm.get_vbox()->pack_start (*m, true, true);
+		confirm.add_button (Gtk::Stock::CANCEL, Gtk::RESPONSE_CANCEL);
+		confirm.add_button (_("Yes, Load It"), Gtk::RESPONSE_ACCEPT);
+		confirm.show_all ();
+		switch (confirm.run()) {
+			case RESPONSE_ACCEPT:
+				break;
+			default:
+				return false;
+		}
+
+		_snapshot_display.set_sensitive (false);
+		ARDOUR_UI::instance()->load_session (_session->path(), string (snap_name));
+		_snapshot_display.set_sensitive (true);
+		return true;
+	}
+	return false;
+}
+
+
+/** Pop up the snapshot display context menu.
+ * @param button Button used to open the menu.
+ * @param time Menu open time.
+ * @param snapshot_name Name of the snapshot that the menu click was over.
+ */
+void
+EditorSnapshots::popup_context_menu (int button, int32_t time, std::string snapshot_name)
+{
+	using namespace Menu_Helpers;
+
+	MenuList& items (_menu.items());
+	items.clear ();
+
+	const bool modification_allowed = (_session->snap_name() != snapshot_name && _session->name() != snapshot_name && _snapshot_model->children().size () > 1);
+
+	add_item_with_sensitivity (items, MenuElem (_("Remove"), sigc::bind (sigc::mem_fun (*this, &EditorSnapshots::remove), snapshot_name)), modification_allowed);
+	add_item_with_sensitivity (items, MenuElem (_("Rename..."), sigc::bind (sigc::mem_fun (*this, &EditorSnapshots::rename), snapshot_name)), modification_allowed);
+
+	_menu.popup (button, time);
+}
+
+void
+EditorSnapshots::rename (std::string old_name)
+{
+	ArdourWidgets::Prompter prompter(true);
+
+	string new_name;
+
+	prompter.set_name ("Prompter");
+	prompter.set_title (_("Rename Snapshot"));
+	prompter.add_button (Gtk::Stock::SAVE, Gtk::RESPONSE_ACCEPT);
+	prompter.set_prompt (_("New name of snapshot"));
+	prompter.set_initial_text (old_name);
+
+	if (prompter.run() == RESPONSE_ACCEPT) {
+		prompter.get_result (new_name);
+		if (new_name.length()) {
+			_session->rename_state (old_name, new_name);
+			redisplay ();
+		}
+	}
+}
+
+
+void
+EditorSnapshots::remove (std::string name)
+{
+	vector<string> choices;
+
+	std::string prompt = string_compose (_("Do you really want to remove snapshot \"%1\" ?\n(which cannot be undone)"), name);
+
+	choices.push_back (_("No, do nothing."));
+	choices.push_back (_("Yes, remove it."));
+
+	ArdourWidgets::Choice prompter (_("Remove snapshot"), prompt, choices);
+
+	if (prompter.run () == 1) {
+		_session->remove_state (name);
+		redisplay ();
+	}
+}
+
+void
+EditorSnapshots::redisplay ()
+{
+	if (_session == 0) {
+		return;
+	}
+
+	vector<string> state_file_names = _session->possible_states ();
+
+	if (state_file_names.empty()) {
+		return;
+	}
+
+	_snapshot_model->clear ();
+
+	for (vector<string>::iterator i = state_file_names.begin(); i != state_file_names.end(); ++i)
+	{
+		string statename = (*i);
+		TreeModel::Row row = *(_snapshot_model->append());
+
+		/* this lingers on in case we ever want to change the visible
+		   name of the snapshot.
+		*/
+
+		string display_name;
+		display_name = statename;
+
+		if (statename == _session->snap_name()) {
+			_snapshot_display.get_selection()->select(row);
+		}
+
+		std::string s = Glib::build_filename (_session->path(), statename + ARDOUR::statefile_suffix);
+
+		GStatBuf gsb;
+		g_stat (s.c_str(), &gsb);
+		Glib::DateTime gdt(Glib::DateTime::create_now_local (gsb.st_mtime));
+
+		if (_session->snap_name() == display_name) {
+			row[_columns.current_active] = u8"\u25B6"; // BLACK RIGHT-POINTING TRIANGLE
+		} else {
+			row[_columns.current_active] = "";
+		}
+		row[_columns.visible_name] = display_name;
+		row[_columns.real_name] = statename;
+		row[_columns.time_formatted] = gdt.format ("%F %H:%M");
+	}
+}
+

@@ -1,0 +1,121 @@
+#!/bin/bash
+
+# package
+
+# This will collect up the x86 and x86_64 bundles created by build
+# and package them together with an installer script.
+
+BUILDTYPE=""
+MAKESELF=""
+BUILD_ROOT=../../build
+
+MAKESELFOPTS="--bzip2"
+
+if [ $# -eq 0 ] ; then
+	echo ""	 
+	echo "ERROR - Please specify build type"
+	echo "	  --public"
+	echo "	  --sae"
+	echo ""	 
+	exit 1
+fi
+
+while [ $# -gt 0 ] ; do
+	echo "arg = $1"
+	case $1 in
+
+	#
+	# top level build targets
+	#
+
+	--sae)
+		APPNAME=Ardour ;
+		shift ;;
+	--mixbus)
+		APPNAME=Mixbus ;
+		shift ;;
+	--livetrax)
+		APPNAME=LiveTrax ;
+		shift ;;
+	--public)
+		APPNAME=Ardour ;
+		shift ;;
+
+	--makeself)
+		MAKESELF=`which makeself`;
+		shift ;;
+
+	--singlearch) shift ;;
+
+	--gcc5abi) shift ;;
+
+	--xz) MAKESELFOPTS="--xz --complevel 9" ; shift ;;
+
+	*)
+		#catch all for unknown arguments
+		echo ""
+		echo "!!! ERROR !!! - Unknown argument $1"
+		echo ""
+		exit 1
+		;;
+	esac
+done
+
+. ../define_versions.sh
+
+if [ x$DEBUG = xT ]; then
+	BUILDTYPE="dbg"
+fi
+if [ x$FREEBI = xT ]; then
+	BUILDTYPE="demo"
+fi
+if [ x$DEBUG$FREEBI = xTT ]; then
+	BUILDTYPE="demo-dbg"
+fi
+
+X86_64_BUNDLE="${APPNAME}_x86_64-${release_version}"
+PACKAGE="${APPNAME}-${release_version}-x86_64"
+
+if [ ! -z ${BUILDTYPE} ]; then
+	X86_64_BUNDLE="${X86_64_BUNDLE}-${BUILDTYPE}"
+	PACKAGE="${APPNAME}-${release_version}-${BUILDTYPE}-x86_64"
+fi 
+
+if [ ! -e ${X86_64_BUNDLE}.tar ]; then
+	echo ""
+	echo "Can't locate x86_64 bundle file ${X86_64_BUNDLE}.tar"
+	echo ""
+	exit 1
+fi
+
+echo "Cleaning up any old package files for this build"
+#Get rid of any old packages of this same name.
+rm -f ${PACKAGE}.tar
+rm -rf ${PACKAGE}
+
+
+echo "Creating new package dir..."
+mkdir ${PACKAGE}
+
+mv ${X86_64_BUNDLE}.tar ${PACKAGE}
+mv ${X86_64_BUNDLE}.size ${PACKAGE}/.${X86_64_BUNDLE}.size
+
+cp install.sh ${PACKAGE}
+cp stage2.run ${PACKAGE}/.stage2.run
+cp README ${PACKAGE}
+
+if test -n "$MAKESELF"; then
+	echo "Creating self-extracting installer"
+	$MAKESELF ${MAKESELFOPTS} ${PACKAGE}/ ${PACKAGE}.run ${APPNAME} ./install.sh
+else
+	echo "Creating tarball..."
+	tar -cf ${PACKAGE}.tar ${PACKAGE}
+fi
+
+echo "Clean up"
+rm -rf ${PACKAGE}
+rm -f stage2.run
+
+echo ""
+echo "Done"
+echo ""

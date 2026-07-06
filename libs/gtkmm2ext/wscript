@@ -1,0 +1,112 @@
+#!/usr/bin/env python
+from waflib.extras import autowaf as autowaf
+import os
+import sys
+
+# Version of this package (even if built as a child)
+MAJOR = '0'
+MINOR = '8'
+MICRO = '3'
+GTKMM2EXT_VERSION = "%s.%s.%s" % (MAJOR, MINOR, MICRO)
+
+# Library version (UNIX style major, minor, micro)
+# major increment <=> incompatible changes
+# minor increment <=> compatible changes (additions)
+# micro increment <=> no interface changes
+GTKMM2EXT_LIB_VERSION = '0.8.3'
+
+I18N_PACKAGE = 'gtkmm2ext3'
+
+gtkmm2ext_sources = [
+        'actions.cc',
+        'action_model.cc',
+        'application.cc',
+        'bindings.cc',
+        'cairo_packer.cc',
+        'cairo_theme.cc',
+        'cairo_widget.cc',
+        'cell_renderer_button.cc',
+        'cell_renderer_color_selector.cc',
+        'cell_renderer_pixbuf_multi.cc',
+        'cell_renderer_pixbuf_toggle.cc',
+        'colors.cc',
+        'colorspace.cc',
+        'cursors.cc',
+        'debug.cc',
+        'dndtreeview.cc',
+        'emscale.cc',
+        'gtk_ui.cc',
+        'gtkapplication.c',
+        'keyboard.cc',
+        'menu_elems.cc',
+        'persistent_tooltip.cc',
+        'string_completion.cc',
+        'textviewer.cc',
+        'treeutils.cc',
+        'ui_config.cc',
+        'utils.cc',
+        'visibility_tracker.cc',
+        'window_proxy.cc',
+        'window_title.cc'
+]
+
+def options(opt):
+    pass
+
+def configure(conf):
+    pass
+
+def build(bld):
+    # operate on copy to avoid adding sources twice
+    sources = list(gtkmm2ext_sources)
+
+    if bld.is_defined ('INTERNAL_SHARED_LIBS'):
+        obj              = bld.shlib(features = 'c cxx cshlib cxxshlib', source=sources)
+        # defines for this library
+        obj.defines      = [ 'LIBGTKMM2EXT_DLL_EXPORTS', 'ABSTRACT_UI_EXPORTS' ]
+    else:
+        obj              = bld.stlib(features = 'c cxx cstlib cxxstlib', source=sources)
+        obj.cxxflags     = [ bld.env['compiler_flags_dict']['pic'] ]
+        obj.defines      = [ ]
+
+    obj.export_includes = ['.']
+    obj.includes     = ['.']
+    obj.name         = 'libgtkmm2ext'
+    obj.target       = 'gtkmm2ext'
+    obj.uselib       = 'XML CAIROMM PANGOMM GLIBMM GIOMM'
+    obj.use          = [ 'libpbd', 'libydk', 'libydkmm', 'libytkmm' ]
+    obj.vnum         = GTKMM2EXT_LIB_VERSION
+    obj.install_path = bld.env['LIBDIR']
+    obj.defines     += [
+                    'PACKAGE="' + I18N_PACKAGE + '"',
+                    'LOCALEDIR="' + os.path.join(
+                            autowaf.normpath(bld.env['DATADIR']), 'locale') + '"']
+    if sys.platform == 'darwin':
+        obj.source += ['gtkapplication_quartz.mm', 'nsglview.mm']
+        obj.uselib += ' OSX'
+    else:
+        obj.source += ['gtkapplication_x11.c']
+
+    # i18n
+    if bld.is_defined('ENABLE_NLS'):
+        mo_files = bld.path.ant_glob('po/*.mo')
+        for mo in mo_files:
+            lang = os.path.basename(mo.srcpath()).replace('.mo', '')
+            bld.install_as (os.path.join(os.path.normpath(bld.env['LOCALEDIR']), lang, 'LC_MESSAGES', I18N_PACKAGE + '.mo'),
+                            mo)
+
+def i18n_func(bld):
+    autowaf.build_i18n(bld, '.', 'libs/gtkmm2ext', I18N_PACKAGE, gtkmm2ext_sources,
+                       'Paul Davis')
+
+def i18n_pot_func(bld):
+    autowaf.build_i18n_pot(bld, '.', 'libs/gtkmm2ext', I18N_PACKAGE, gtkmm2ext_sources,
+                       'Paul Davis')
+
+def i18n_po_func(bld):
+    autowaf.build_i18n_po(bld, '.', 'libs/gtkmm2ext', I18N_PACKAGE, gtkmm2ext_sources,
+                       'Paul Davis')
+
+def i18n_mo_func(bld):
+    autowaf.build_i18n_mo(bld, '.', 'libs/gtkmm2ext', I18N_PACKAGE, gtkmm2ext_sources,
+                       'Paul Davis')

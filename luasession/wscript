@@ -1,0 +1,88 @@
+#!/usr/bin/env python
+from waflib.extras import autowaf as autowaf
+import waflib.Utils as Utils
+import os
+import sys
+
+def options(opt):
+    pass
+
+def configure(conf):
+    conf.check_cc(
+            msg = 'Checking for static libreadline',
+            header_name='stdio.h readline/readline.h',
+            lib= [':libreadline.a', 'termcap'],
+            uselib_store='READLINE',
+            define_name='HAVE_READLINE',
+            mandatory=False)
+
+    if not conf.is_defined('HAVE_READLINE'):
+        conf.check_cc(
+                msg = 'Checking for libreadline',
+                header_name='stdio.h readline/readline.h',
+                lib='readline',
+                uselib_store='READLINE',
+                define_name='HAVE_READLINE',
+                mandatory=False)
+
+def build(bld):
+    if not bld.is_defined('HAVE_READLINE'):
+        return
+
+    # commandline luasession wrapper script
+    if bld.env['build_target'] != 'mingw' and bld.env['build_target'] != 'msvc':
+        obj              = bld(features = 'subst')
+        obj.source       = 'ardour-lua.sh.in'
+        obj.target       = 'ardour' + bld.env['MAJOR'] + '-lua'
+        obj.chmod        = Utils.O755
+        obj.install_path = bld.env['BINDIR']
+        obj.LIBDIR       = os.path.normpath(bld.env['DLLDIR'])
+        obj.DATADIR      = os.path.normpath(bld.env['DATADIR'])
+        obj.CONFDIR      = os.path.normpath(bld.env['CONFDIR'])
+
+    # commandline luasession
+    obj = bld (features = 'cxx c cxxprogram')
+    obj.source       = 'luasession.cc'
+    obj.target       = 'luasession'
+    obj.includes     = ['../libs']
+    obj.linkflags    = [ bld.env['compiler_flags_dict']['execstack'] ]
+    obj.use          = ['liblua',
+                        'libpbd',
+                        'libardour',
+                        'libardour_cp',
+                        'libtemporal',
+                        'libmidipp',
+                     ]
+    obj.defines = [
+        'VERSIONSTRING="' + bld.env['VERSION'] + '"',
+        'DATA_DIR="'   + autowaf.normpath(bld.env['DATADIR']) + '"',
+        'CONFIG_DIR="' + autowaf.normpath(bld.env['SYSCONFDIR']) + '"',
+        'LOCALEDIR="'  + os.path.join(autowaf.normpath(bld.env['DATADIR']), 'locale') + '"',
+        'PACKAGE="'    + "ARDOURUTILS" + '"',
+        ]
+
+    obj.uselib       = 'UUID FLAC FONTCONFIG GLIBMM GIOMM GTHREAD OGG CURL DL XML'
+    obj.uselib       += ' AUDIOUNITS OSX LO '
+    obj.uselib       += ' READLINE '
+    obj.uselib       += ' FFTW3F LO TAGLIB LILV RUBBERBAND AUBIO LRDF ARCHIVE VAMPSDK VAMPHOSTSDK'
+
+    if bld.is_defined('HAVE_SUIL'):
+        obj.use += [ 'libsuil' ]
+
+    if bld.is_defined('HAVE_USB'):
+        obj.uselib += ' USB'
+
+    if sys.platform == 'darwin':
+        obj.uselib += ' AUDIOUNITS OSX'
+        obj.use    += ' libappleutility'
+    elif bld.env['build_target'] == 'mingw' or bld.env['build_target'] == 'msvc':
+        obj.linkflags += bld.env['compiler_flags_dict']['mconsole']
+
+    if bld.is_defined('NEED_INTL'):
+        obj.linkflags.append ('-lintl')
+
+    if bld.env['build_target'] == 'mingw' or bld.env['build_target'] == 'msvc':
+        obj.install_path = bld.env['BINDIR']
+        obj.target       = 'ardour' + bld.env['MAJOR'] + '-lua'
+    else:
+        obj.install_path = bld.env['DLLDIR']

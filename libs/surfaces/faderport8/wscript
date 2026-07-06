@@ -1,0 +1,56 @@
+#!/usr/bin/env python
+import os
+
+fp8_16_sources = [
+        'faderport8.cc',
+        'fp8_controls.cc',
+        'fp8_strip.cc',
+        'callbacks.cc',
+        'actions.cc',
+        'gui.cc'
+]
+
+def options(opt):
+    pass
+
+def configure(conf):
+    pass
+
+def build(bld):
+    obj = bld(features = 'cxx cxxshlib')
+    obj.source       = list(fp8_16_sources)
+    obj.source      += [ 'faderport8_interface.cc' ]
+    obj.defines      = [ 'PACKAGE="ardour_faderport8"' ]
+    obj.defines     += [ 'ARDOURSURFACE_DLL_EXPORTS' ]
+    obj.includes     = [ '.' ]
+    obj.name         = 'libardour_faderport8'
+    obj.target       = 'ardour_faderport8'
+    obj.uselib       = 'XML OSX CAIROMM PANGOMM GLIBMM GIOMM'
+    obj.use          = 'libardour libardour_cp libgtkmm2ext libpbd libytkmm'
+    obj.install_path = os.path.join(bld.env['LIBDIR'], 'surfaces')
+
+    obj = bld(features = 'cxx cxxshlib')
+    obj.source       = list(fp8_16_sources)
+    obj.source      += [ 'faderport16_interface.cc' ]
+    obj.defines      = [ 'PACKAGE="ardour_faderport8"' ]
+    obj.defines     += [ 'ARDOURSURFACE_DLL_EXPORTS' ]
+    obj.defines     += [ 'FADERPORT16' ]
+    obj.includes     = [ '.' ]
+    obj.name         = 'libardour_faderport16'
+    obj.target       = 'ardour_faderport16'
+    obj.uselib       = 'XML OSX CAIROMM PANGOMM GLIBMM GIOMM'
+    obj.use          = 'libardour libardour_cp libgtkmm2ext libpbd libytkmm'
+    obj.install_path = os.path.join(bld.env['LIBDIR'], 'surfaces')
+
+    obj = bld(features = 'cxx cxxshlib')
+    obj.source       = list(fp8_16_sources)
+    obj.source      += [ 'faderport2_interface.cc' ]
+    obj.defines      = [ 'PACKAGE="ardour_faderport8"' ]
+    obj.defines     += [ 'ARDOURSURFACE_DLL_EXPORTS' ]
+    obj.defines     += [ 'FADERPORT2' ]
+    obj.includes     = [ '.' ]
+    obj.name         = 'libardour_faderport2'
+    obj.target       = 'ardour_faderport2'
+    obj.uselib       = 'XML OSX CAIROMM PANGOMM GLIBMM GIOMM'
+    obj.use          = 'libardour libardour_cp libgtkmm2ext libpbd libytkmm'
+    obj.install_path = os.path.join(bld.env['LIBDIR'], 'surfaces')

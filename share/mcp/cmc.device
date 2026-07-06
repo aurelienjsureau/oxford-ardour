@@ -1,0 +1,15 @@
+<MackieProtocolDevice>
+  <Name value="CMC series"/>
+  <Manufacturer value="Steinberg"/>
+  <Strips value="1"/>
+  <Extenders value="0"/>
+  <MasterPosition value="0"/>
+  <MasterFader value="yes"/>
+  <TimecodeDisplay value="no"/>
+  <TwoCharacterDisplay value="no"/>
+  <GlobalControls value="yes"/>
+  <JogWheel value="yes"/>
+  <TouchSenseFaders value="yes"/>
+  <usesIPMIDI value="no"/>
+  <NoHandShake value="yes"/>
+</MackieProtocolDevice>

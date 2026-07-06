@@ -1,0 +1,99 @@
+#!/usr/bin/env python
+from waflib.extras import autowaf as autowaf
+
+# Version of this package (even if built as a child)
+QM_DSP_VERSION = '1.7.1'
+
+# Library version (UNIX style major, minor, micro)
+# major increment <=> incompatible changes
+# minor increment <=> compatible changes (additions)
+# micro increment <=> no interface changes
+QM_DSP_LIB_VERSION = '1.7.1'
+
+def options(opt):
+    pass
+
+def configure(conf):
+    if conf.is_defined('USE_EXTERNAL_LIBS'):
+        conf.check_cxx(header_name="base/Pitch.h", mandatory=True, msg="Checking for qm-dsp headers")
+        conf.check_cxx(lib="qm-dsp", uselib_store="QMDSP", mandatory=True)
+
+        # Verify that qm-dsp is self-contained and that FFT transforms actually works
+        if not conf.check_cxx(msg = 'Checking qm-dsp without explicit kiss linking',
+                              features = 'cxx cxxprogram',
+                              fragment = """#include "dsp/transforms/FFT.h"\nint main(void) {\nFFT(4).process(false, nullptr, 0, nullptr, nullptr);\nFFTReal(4).forward(nullptr, nullptr, nullptr);\nreturn 0;\n}""",
+                              uselib = 'QMDSP',
+                              okmsg = 'ok',
+                              errmsg = "-lqm-dsp by itself failed",
+                              mandatory = False,
+                              ):
+            # The external qm-dsp might be built without embedded kiss - try to link with it explicitly and check again
+            if conf.check_cxx(lib="kissfft-double", uselib_store="KISSFFT", mandatory=False):
+                # kissfft ersions >= 130 have changed names (kiss_fft_double -> kissfft-double) and
+                # library organization
+                conf.env.append_value('LIB_QMDSP', conf.env['LIB_KISSFFT'])
+            else:
+                # kiss_fft <= 1.3.x
+                conf.check_cxx(lib="kiss_fft_double", uselib_store="KISS_FFT", mandatory=True)
+                conf.check_cxx(lib="kiss_fftr_double", uselib_store="KISS_FFTR", mandatory=True)
+                conf.env.append_value('LIB_QMDSP', conf.env['LIB_KISS_FFT'] + conf.env['LIB_KISS_FFTR'])
+
+            conf.check_cxx(msg = 'Checking qm-dsp with explicit kiss linking',
+                           features = 'cxx cxxprogram',
+                           fragment = """#include "dsp/transforms/FFT.h"\nint main(void) {\nFFT(4).process(false, nullptr, 0, nullptr, nullptr);\nFFTReal(4).forward(nullptr, nullptr, nullptr);\nreturn 0;\n}""",
+                           uselib = 'QMDSP',
+                           okmsg = '-lqm-dsp needs explicit kiss linking',
+                           errmsg = "qm-dsp doesn't work, even with kiss libraries",
+                           mandatory = True,
+                           )
+
+def build(bld):
+    if bld.is_defined('USE_EXTERNAL_LIBS'):
+        return
+
+    # Host Library
+    obj = bld(features = 'c cxx cxxstlib')
+    obj.source = '''
+            base/Pitch.cpp
+            base/KaiserWindow.cpp
+            base/SincWindow.cpp
+            dsp/chromagram/Chromagram.cpp
+            dsp/chromagram/ConstantQ.cpp
+            dsp/keydetection/GetKeyMode.cpp
+            dsp/mfcc/MFCC.cpp
+            dsp/onsets/DetectionFunction.cpp
+            dsp/onsets/PeakPicking.cpp
+            dsp/phasevocoder/PhaseVocoder.cpp
+            dsp/rateconversion/Decimator.cpp
+            dsp/rateconversion/DecimatorB.cpp
+            dsp/rhythm/BeatSpectrum.cpp
+            dsp/signalconditioning/DFProcess.cpp
+            dsp/signalconditioning/Filter.cpp
+            dsp/signalconditioning/FiltFilt.cpp
+            dsp/signalconditioning/Framer.cpp
+            dsp/tempotracking/DownBeat.cpp
+            dsp/tempotracking/TempoTrack.cpp
+            dsp/tempotracking/TempoTrackV2.cpp
+            dsp/tonal/ChangeDetectionFunction.cpp
+            dsp/tonal/TCSgram.cpp
+            dsp/tonal/TonalEstimator.cpp
+            dsp/transforms/FFT.cpp
+            dsp/wavelet/Wavelet.cpp
+            maths/Correlation.cpp
+            maths/CosineDistance.cpp
+            maths/KLDivergence.cpp
+            maths/MathUtilities.cpp
+            maths/pca/pca.c
+            ext/kissfft/kiss_fft.c
+            ext/kissfft/tools/kiss_fftr.c
+    '''
+    autowaf.ensure_visible_symbols (obj, False)
+    obj.export_includes = ['.']
+    obj.includes     = ['.', 'ext/kissfft', 'ext/kissfft/tools/']
+    obj.defines      = ['kiss_fft_scalar=double']
+    obj.name         = 'libqm-dsp'
+    obj.target       = 'qm-dsp'
+    obj.vnum         = QM_DSP_VERSION
+    if bld.env['build_target'] != 'mingw' and bld.env['build_target'] != 'msvc':
+        obj.cxxflags += [ bld.env['compiler_flags_dict']['pic'] ]
+        obj.cflags   += [ bld.env['compiler_flags_dict']['pic'] ]

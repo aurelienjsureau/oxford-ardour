@@ -1,0 +1,59 @@
+# comma-separated intervals;canonical name;preferrred short name; other names (optional)
+
+0,7;Power (5th);pow5
+
+# triads
+
+0,4,7;Major;maj;major
+0,3,7;Minor;min;minor
+0,3,6;Diminished;dim
+0,4,8;Augmented;aug
+0,5,7;Sus4;sus4
+0,2,7;Sus2;sus2
+0,4,10;Dominant 7th no5;dom7no5:
+0,3,10;Italian 6th;ital6;
+
+0,7,12;Gtr 3-str Power;pow12;
+
+# tetrads
+
+0,4,7,11;Major 7th;maj7
+0,4,7,10;Dominant 7th;7
+0,3,7,10;Minor 7th;min7
+0,3,6,10;Half Diminished 7th;min7b5;halfdim7,french6,m7b5
+0,3,6,9;Diminished 7th;dim7
+0,3,7,11;Minor/Major 7th;min/maj7
+0,4,6,11;Major 7th/flat 5;maj7b5
+0,4,8,11;Major 7th/sharp 5;maj7#5
+0,3,6,9;Diminished 7th;dim7
+0,4,8,10;Augmented 7th;aug7
+0,4,8,11;Augmented Major 7th;aug-dom-7
+0,4,7,14;Add9;add9
+0,4,7,9;Major 6th;maj6
+0,3,7,9;Minor 6th;min6
+0,3,7,14;Minor Add9;min/9
+0,2,7,11;Sus2/7;sus2/7
+0,5,7,11;Sus4/7;sus4/7
+0,4,7,12;Gtr 4-str major;gtr4maj
+0,3,7,12;Gtr 4-str minor;gtr4min
+0,4,10,13;Hendrix 7b9;h7b9
+0,4,10,14;Dominant 9th no 5;dom9-5
+0,4,10,15;Hendrix 7#9;h7#9
+
+# Pentachords
+
+0,4,7,10,14;Dominant 9th;dom9
+0,4,7,11,14;Major 9th;9;maj9
+0,3,7,10,14;Minor 9th;min9
+0,4,7,9,14;Major 6/9;maj6/9
+0,4,7,12,19:Gtr 5-str major;gtr5maj;
+0,3,7,12,19:Gtr 5-str major;gtr5min;
+
+# Extended chords
+
+0,4,7,10,14,17;Dominant 11th;dom11
+0,4,7,11,14,21;Major 13th;maj13
+0,4,7,12,19,24;Gtr 6-str major;gtr6maj;
+0,3,7,12,19,24;Gtr 6-str minor;gtr6min;
+
+

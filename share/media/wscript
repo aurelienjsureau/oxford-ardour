@@ -1,0 +1,13 @@
+#!/usr/bin/env python
+
+import os
+
+def configure(conf):
+    pass
+
+def build(bld):
+    mediafiles = bld.path.ant_glob ('**', excl='wscript')
+    bld.install_files (os.path.join(bld.env['DATADIR'], 'media'), mediafiles, relative_trick=True)
+
+def options(opt):
+    pass

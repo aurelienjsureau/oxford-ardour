@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MackieProtocolDevice>
+  <Name value="Platform M+"/>
+  <Manufacturer value="iCON"/>
+  <Strips value="8"/>
+  <Extenders value="0"/>
+  <MasterPosition value="0"/>
+  <MasterFader value="yes"/>
+  <TimecodeDisplay value="yes"/>
+  <TwoCharacterDisplay value="no"/>
+  <HasSeparateMeters value="yes"/>
+  <GlobalControls value="yes"/>
+  <JogWheel value="yes"/>
+  <TouchSenseFaders value="yes"/>
+  <LogicControlButtons value="yes"/>
+  <usesIPMIDI value="no"/>
+  <NoHandShake value="yes"/>
+  <IsPlatformMp value="yes"/>
+  <HasQConSecondLCD value="yes"/>
+  <HasQConMasterMeters value="yes"/>
+</MackieProtocolDevice>

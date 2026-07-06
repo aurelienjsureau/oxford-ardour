@@ -1,0 +1,92 @@
+/*
+ * Copyright (C) 2008-2012 Sakari Bergen <sakari.bergen@beatwaves.net>
+ * Copyright (C) 2008-2013 Paul Davis <paul@linuxaudiosystems.com>
+ * Copyright (C) 2009-2012 David Robillard <d@drobilla.net>
+ * Copyright (C) 2022 Robin Gareus <robin@gareus.org>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
+
+#pragma once
+
+#include <algorithm>
+#include <list>
+#include <string>
+
+#include "ardour/export_channel.h"
+#include "ardour/export_pointers.h"
+
+#include "pbd/xml++.h"
+
+namespace ARDOUR {
+
+class Session;
+
+class LIBARDOUR_API ExportChannelConfiguration : public std::enable_shared_from_this<ExportChannelConfiguration>
+{
+private:
+	friend class ExportElementFactory;
+	ExportChannelConfiguration (Session& session);
+
+public:
+	bool operator== (ExportChannelConfiguration const& other) const
+	{
+		return channels == other.channels;
+	}
+	bool operator!= (ExportChannelConfiguration const& other) const
+	{
+		return channels != other.channels;
+	}
+
+	XMLNode& get_state () const;
+	int      set_state (const XMLNode&);
+
+	typedef std::list<ExportChannelPtr> ChannelList;
+
+	bool all_channels_have_ports () const;
+
+	std::string name () const { return _name; }
+	void set_name (std::string name) { _name = name; }
+
+	RegionExportChannelFactory::Type region_processing_type () const { return region_type; }
+	void set_region_processing_type (RegionExportChannelFactory::Type type) { region_type = type; }
+
+	bool get_split () const { return split; }
+	void set_split (bool value) { split = value; }
+
+	uint32_t get_n_chans () const { return channels.size (); }
+	ChannelList const& get_channels () const { return channels; }
+	void clear_channels () { channels.clear (); }
+	void register_channel (ExportChannelPtr channel) { channels.push_back (channel); }
+	void register_channels (ChannelList const& new_channels)
+	{
+		std::copy (new_channels.begin (), new_channels.end (), std::back_inserter (channels));
+	}
+
+	/** Returns a list of channel configurations that match the files created.
+	  * I.e. many configurations if splitting is enabled, one if not. */
+	void configurations_for_files (std::list<std::shared_ptr<ExportChannelConfiguration>>& configs);
+
+private:
+	Session& session;
+
+	ChannelList                      channels;
+	bool                             split; // Split to mono files
+	std::string                      _name;
+	RegionExportChannelFactory::Type region_type;
+};
+
+} // namespace ARDOUR
+

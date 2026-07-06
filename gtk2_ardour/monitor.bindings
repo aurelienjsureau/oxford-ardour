@@ -1,0 +1,25 @@
+<Bindings name="Monitor Section">
+  <Press>
+     <Binding key="e" action="Solo/toggle-exclusive-solo"/>
+     <Binding key="Shift-o" action="Solo/toggle-mute-overrides-solo"/>
+     <Binding key="b" action="Monitor/toggle-monitor-processor-box"/>
+     
+     <Binding key="l" action="Monitor/monitor-cut-0"/>
+     <Binding key="Primary-l" action="Monitor/monitor-solo-0"/>
+     <Binding key="Secondary-l" action="Monitor/monitor-dim-0"/>
+     <Binding key="Tertiary-l" action="Monitor/monitor-invert-0"/>
+
+     <Binding key="r" action="Monitor/monitor-cut-1"/>
+     <Binding key="Primary-r" action="Monitor/monitor-solo-1"/>
+     <Binding key="Secondary-r" action="Monitor/monitor-dim-1"/>
+     <Binding key="Tertiary-r" action="Monitor/monitor-invert-1"/>
+
+     <!-- DO NOT ADD BINDINGS FOR THE GLOBAL "cut-all" STYLE ACTIONS HERE.
+     	  They appear in ardour.keys.in as global bindings.
+       -->
+
+     <Binding key="i" action="Solo/solo-use-in-place"/>
+     <Binding key="p" action="Solo/solo-use-pfl"/>
+     <Binding key="a" action="Solo/solo-use-afl"/>
+  </Press>
+</Bindings>

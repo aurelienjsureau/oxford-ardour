@@ -1,0 +1,84 @@
+[ -z $TOP ] && echo "ardev_common.sh: TOP var must be set" >&2 && exit 1
+
+if which realpath > /dev/null; then
+	TOP=`realpath "$TOP"`
+elif which readlink > /dev/null; then
+	TOP=`(cd "$TOP"; pwd)`
+fi
+
+#export G_DEBUG=fatal_criticals
+
+libs=$TOP/@LIBS@
+
+# https://tracker.ardour.org/view.php?id=5605#c18109
+export GTK2_RC_FILES=/nonexistent
+
+#
+# when running ardev, the various parts of Ardour have not been consolidated into the locations that they
+# would normally end up after an install. We therefore need to set up environment variables so that we
+# can find all the components.
+#
+
+export ARDOUR_SURFACES_PATH=$libs/surfaces/osc:$libs/surfaces/faderport8:$libs/surfaces/faderport:$libs/surfaces/generic_midi:$libs/surfaces/tranzport:$libs/surfaces/powermate:$libs/surfaces/mackie:$libs/surfaces/us2400:$libs/surfaces/wiimote:$libs/surfaces/push2:$libs/surfaces/maschine2:$libs/surfaces/cc121:$libs/surfaces/launch_control_xl:$libs/surfaces/contourdesign:$libs/surfaces/websockets:$libs/surfaces/mcp_http:$libs/surfaces/console1:$libs/surfaces/launchpad_pro:$libs/surfaces/launchpad_x:$libs/surfaces/launchkey_4
+export ARDOUR_PANNER_PATH=$libs/panners
+export ARDOUR_DATA_PATH=$TOP/share:$TOP/build:$TOP/gtk2_ardour:$TOP/build/gtk2_ardour
+export ARDOUR_MIDIMAPS_PATH=$TOP/share/midi_maps
+export ARDOUR_MIDI_PATCH_PATH=$TOP/share/patchfiles
+export ARDOUR_EXPORT_FORMATS_PATH=$TOP/share/export
+export ARDOUR_THEMES_PATH=$TOP/gtk2_ardour/themes
+export ARDOUR_BACKEND_PATH=$libs/backends/jack:$libs/backends/dummy:$libs/backends/alsa:$libs/backends/coreaudio:$libs/backends/portaudio:$libs/backends/pulseaudio
+export ARDOUR_TEST_PATH=$TOP/libs/ardour/test/data
+export PBD_TEST_PATH=$TOP/libs/pbd/test
+export EVORAL_TEST_PATH=$TOP/libs/evoral/test/testdata
+export MIDIPP_TEST_PATH=$TOP/share/patchfiles
+
+if test -d $libs/tk/suil; then
+	export SUIL_MODULE_DIR=$libs/tk/suil
+fi
+
+#
+# even though we set the above variables, ardour requires that these
+# two also be set. the above settings will override them.
+#
+
+export ARDOUR_CONFIG_PATH=$TOP:$TOP/gtk2_ardour:$TOP/build:$TOP/build/gtk2_ardour
+export ARDOUR_DLL_PATH=$libs
+
+export GTK_PATH=~/.ardour3:$libs/clearlooks-newer
+export VAMP_PATH=$libs/vamp-plugins:$libs/vamp-pyin${VAMP_PATH:+:$VAMP_PATH}
+
+export @LD_LIBRARY_PATH@=$libs/tk/ydk-pixbuf:$libs/tk/ztk::$libs/tk/ydk:$libs/tk/ytk:$libs/tk/ztkmm:$libs/tk/ydkmm:$libs/tk/ytkmm:$libs/tk/suil:$libs/ptformat:$libs/qm-dsp:$libs/vamp-sdk:$libs/surfaces:$libs/ctrl-interface/control_protocol:$libs/ctrl-interface/midi_surface:$libs/ardour:$libs/midi++2:$libs/pbd:$libs/rubberband:$libs/soundtouch:$libs/aaf:$libs/gtkmm2ext:$libs/widgets:$libs/appleutility:$libs/taglib:$libs/evoral:$libs/evoral/src/libsmf:$libs/audiographer:$libs/temporal:$libs/libltc:$libs/canvas:$libs/waveview:$libs/ardouralsautil${@LD_LIBRARY_PATH@:+:$@LD_LIBRARY_PATH@}
+
+# DYLD_LIBRARY_PATH is for darwin.
+export DYLD_FALLBACK_LIBRARY_PATH=$@LD_LIBRARY_PATH@
+
+if [ x$(command -v pipewire) != x ] ; then
+    pipewire_version=$(pipewire --version | tail -1 | sed 's/^[^0-9][^0-9]*//g')
+    if echo $pipewire_version | grep -q '1\.[12345]' ; then
+	echo
+	echo
+	echo "WARNING: if you use Pipewire's JACK support, and also use MIDI control surfaces (and possibly
+other external MIDI hardware), things will likely not work correctly."
+	echo
+	echo "Pipewire version 1.6.2 or later has supposedly fixed this issue."
+	echo
+	echo
+	export PIPEWIRE_MIDI_BROKEN=1
+    fi
+fi
+
+# allow Ardour to run when configured with --address-sanitizer
+# - halt_on_error=0 - why would we?
+#   Note, static zita-resampler is used by libardour and libalsa_audiobackend
+#   causing a [false positive] odr-violation at start.
+# - new_delete_type_mismatch=0  - because caps plugins do that
+# - leak_check_at_exit=0 - without ARDOUR_RUNNING_UNDER_VALGRIND=TRUE there are many false-positives
+#   besides, instant.xml leaks somewhat intentionally
+if [ x$ASAN_COREDUMP != x ] ; then
+    export ASAN_OPTIONS=abort_on_error=1:disable_coredump=0:unmap_shadow_on_exit=1:detect_odr_violation=0:leak_check_at_exit=0:new_delete_type_mismatch=0${ASAN_OPTIONS:+:$ASAN_OPTIONS}
+else
+    export ASAN_OPTIONS=halt_on_error=0:detect_odr_violation=0:leak_check_at_exit=0:new_delete_type_mismatch=0:malloc_context_size=60${ASAN_OPTIONS:+:$ASAN_OPTIONS}
+fi
+
+ARDOURVERSION=@VERSION@
+EXECUTABLE=@EXECUTABLE@

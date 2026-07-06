@@ -1,0 +1,7 @@
+build/
+*.o
+*.os
+*.pyc
+__pycache__/
+.lock-waf*
+waf3-*/

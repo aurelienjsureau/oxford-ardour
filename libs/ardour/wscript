@@ -1,0 +1,809 @@
+#!/usr/bin/env python
+from waflib.extras import autowaf as autowaf
+from waflib import Options, Task
+import sys
+import platform as PLATFORM
+import os
+import re
+
+# default state file version for this build
+CURRENT_SESSION_FILE_VERSION = 7003
+
+I18N_PACKAGE = 'ardour'
+
+libardour_sources = [
+        'amp.cc',
+        'oxford_channel.cc',
+        'analyser.cc',
+        'analysis_graph.cc',
+        'async_midi_port.cc',
+        'audio_backend.cc',
+        'audio_buffer.cc',
+        'audio_library.cc',
+        'audio_playlist.cc',
+        'audio_playlist_source.cc',
+        'audio_port.cc',
+        'audio_track.cc',
+        'audioanalyser.cc',
+        'audioengine.cc',
+        'audiofile_tagger.cc',
+        'audiofilesource.cc',
+        'audioregion.cc',
+        'audiorom.cc',
+        'audiosource.cc',
+        'auditioner.cc',
+        'automatable.cc',
+        'automation.cc',
+        'automation_control.cc',
+        'automation_list.cc',
+        'automation_watch.cc',
+        # 'beatbox.cc',
+        'broadcast_info.cc',
+        'buffer.cc',
+        'buffer_manager.cc',
+        'buffer_set.cc',
+        'bundle.cc',
+        'butler.cc',
+        'capturing_processor.cc',
+        'chan_count.cc',
+        'chan_mapping.cc',
+        'chord_provider.cc',
+        'circular_buffer.cc',
+        'clip_library.cc',
+        'config_text.cc',
+        'control_group.cc',
+        'control_protocol_manager.cc',
+        'convolver.cc',
+        'data_type.cc',
+        'default_click.cc',
+        'debug.cc',
+        'delayline.cc',
+        'delivery.cc',
+        'demo_sessions.cc',
+        'directory_names.cc',
+        'disk_io.cc',
+        'disk_reader.cc',
+        'disk_writer.cc',
+        'dsp_filter.cc',
+        'ebur128_analysis.cc',
+        'element_import_handler.cc',
+        'engine_slave.cc',
+        'enums.cc',
+        'event_type_map.cc',
+        'export_channel.cc',
+        'export_channel_configuration.cc',
+        'export_failed.cc',
+        'export_filename.cc',
+        'export_format_base.cc',
+        'export_format_manager.cc',
+        'export_format_specification.cc',
+        'export_formats.cc',
+        'export_graph_builder.cc',
+        'export_handler.cc',
+        'export_preset.cc',
+        'export_profile_manager.cc',
+        'export_smf_writer.cc',
+        'export_status.cc',
+        'export_timespan.cc',
+        'ffmpegfileimportable.cc',
+        'ffmpegfilesource.cc',
+        'file_source.cc',
+        'filename_extensions.cc',
+        'filesystem_paths.cc',
+        'filter.cc',
+        'find_session.cc',
+        'fixed_delay.cc',
+        'fluid_synth.cc',
+        'gain_control.cc',
+        'globals.cc',
+        'graph.cc',
+        'graphnode.cc',
+        'graph_edges.cc',
+        'iec1ppmdsp.cc',
+        'iec2ppmdsp.cc',
+        'import.cc',
+        'import_pt.cc',
+        'instrument_info.cc',
+        'internal_return.cc',
+        'internal_send.cc',
+        'io.cc',
+        'io_plug.cc',
+        'io_processor.cc',
+        'io_tasklist.cc',
+        'kmeterdsp.cc',
+        'ladspa_plugin.cc',
+        'latent.cc',
+        'legatize.cc',
+        'library.cc',
+        'location.cc',
+        'ltc_file_reader.cc',
+        'ltc_slave.cc',
+        'lua_api.cc',
+        'luaproc.cc',
+        'luascripting.cc',
+        'lufs_meter.cc',
+        'lv2_evbuf.cc',
+        'uri_map.cc',
+        'lv2_plugin.cc',
+        'meter.cc',
+        'midi_automation_list_binder.cc',
+        'midi_buffer.cc',
+        'midi_channel_filter.cc',
+        'midi_clock_slave.cc',
+        'midi_model.cc',
+        'midi_patch_manager.cc',
+        'midi_playlist.cc',
+        'midi_port.cc',
+        'midi_region.cc',
+        'midi_ring_buffer.cc',
+        'midi_scene_change.cc',
+        'midi_scene_changer.cc',
+        'midi_source.cc',
+        'midi_state_tracker.cc',
+        'midi_stretch.cc',
+        'midi_track.cc',
+        'midi_ui.cc',
+        'mididm.cc',
+        'midiport_manager.cc',
+        'minibpm.cc',
+        'mix.cc',
+        'mixer_scene.cc',
+        'monitor_control.cc',
+        'monitor_port.cc',
+        'monitor_processor.cc',
+        'monitor_return.cc',
+        'mp3fileimportable.cc',
+        'mp3filesource.cc',
+        'mtc_slave.cc',
+        'mtdm.cc',
+        'muteable.cc',
+        'mute_control.cc',
+        'mute_master.cc',
+        'onset_detector.cc',
+        'operations.cc',
+        'pan_controllable.cc',
+        'pannable.cc',
+        'panner.cc',
+        'panner_manager.cc',
+        'panner_shell.cc',
+        'parameter_descriptor.cc',
+        'phase_control.cc',
+        'playlist.cc',
+        'playlist_factory.cc',
+        'playlist_source.cc',
+        'plug_insert_base.cc',
+        'plugin.cc',
+        'plugin_insert.cc',
+        'plugin_manager.cc',
+        'plugin_scan_result.cc',
+        'polarity_processor.cc',
+        'port.cc',
+        'port_engine_shared.cc',
+        'port_insert.cc',
+        'port_manager.cc',
+        'port_set.cc',
+        'presentation_info.cc',
+        'process_thread.cc',
+        'processor.cc',
+        'quantize.cc',
+        'rc_configuration.cc',
+        'readable.cc',
+        'readonly_control.cc',
+        'raw_midi_parser.cc',
+        'recent_sessions.cc',
+        'record_enable_control.cc',
+        'record_safe_control.cc',
+        'region_factory.cc',
+        'region_fx_plugin.cc',
+        'resampled_source.cc',
+        'region.cc',
+        'return.cc',
+        'reverse.cc',
+        'route.cc',
+        'route_group.cc',
+        'route_group_member.cc',
+        'rb_effect.cc',
+        'rt_task.cc',
+        'rt_tasklist.cc',
+        'scala_kbm.cc',
+        'scala_scl.cc',
+        'scale.cc',
+        'scale_provider.cc',
+        'scene_change.cc',
+        'search_paths.cc',
+        'segment_descriptor.cc',
+        'selection.cc',
+        'send.cc',
+        'session.cc',
+        'session_bundles.cc',
+        'session_butler.cc',
+        'session_click.cc',
+        'session_command.cc',
+        'session_configuration.cc',
+        'session_directory.cc',
+        'session_events.cc',
+        'session_export.cc',
+        'session_handle.cc',
+        'session_ltc.cc',
+        'session_metadata.cc',
+        'session_midi.cc',
+        'session_object.cc',
+        'session_playlists.cc',
+        'session_process.cc',
+        'session_rtevents.cc',
+        'session_state.cc',
+        'session_state_utils.cc',
+        'session_time.cc',
+        'session_transport.cc',
+        'sidechain.cc',
+        'simple_export.cc',
+        'slavable.cc',
+        'slavable_automation_control.cc',
+        'smf_source.cc',
+        'sndfile_helpers.cc',
+        'sndfileimportable.cc',
+        'sndfilesource.cc',
+        'solo_control.cc',
+        'solo_isolate_control.cc',
+        'solo_mute_release.cc',
+        'solo_safe_control.cc',
+        'soundcloud_upload.cc',
+        'source.cc',
+        'source_factory.cc',
+        'sp_stretch.cc',
+        'speakers.cc',
+        'srcfilesource.cc',
+        'stripable.cc',
+        # 'step_sequencer.cc',
+        'strip_silence.cc',
+        'strum.cc',
+        'surround_pannable.cc',
+        'surround_return.cc',
+        'surround_send.cc',
+        'system_exec.cc',
+        'revision.cc',
+        'rt_midibuffer.cc',
+        'tailtime.cc',
+        'template_utils.cc',
+        'thawlist.cc',
+        'thread_buffers.cc',
+        'ticker.cc',
+        'track.cc',
+        'transient_detector.cc',
+        'transform.cc',
+        'transport_fsm.cc',
+        'transport_master.cc',
+        'transport_master_manager.cc',
+        'transpose.cc',
+        'triggerbox.cc',
+        'unknown_processor.cc',
+        'user_bundle.cc',
+        'utils.cc',
+        'vca.cc',
+        'vca_manager.cc',
+        'velocity_control.cc',
+        'video_tools_paths.cc',
+        'vumeterdsp.cc',
+        'worker.cc',
+        'zeroconf.cc'
+]
+
+def options(opt):
+    pass
+
+def configure(conf):
+    if conf.env['build_target'] == 'msvc':
+        conf.find_program('ml64', var='AS')
+
+    conf.load('gas')
+    # we don't use hard-coded micro versions with ardour, so hard code it to zero
+    autowaf.check_pkg(conf, 'aubio', uselib_store='AUBIO',
+                      atleast_version='0.3.2')
+    autowaf.check_pkg(conf, 'aubio', uselib_store='AUBIO4',
+                      atleast_version='0.4.0', mandatory=False)
+    autowaf.check_pkg(conf, 'libxml-2.0', uselib_store='XML')
+    if not Options.options.no_lrdf:
+        autowaf.check_pkg(conf, 'lrdf', uselib_store='LRDF',
+                          atleast_version='0.4.0', mandatory=False)
+    autowaf.check_pkg(conf, 'aubio', uselib_store='AUBIO',
+                      atleast_version='0.3.2')
+    autowaf.check_pkg(conf, 'samplerate', uselib_store='SAMPLERATE',
+                      atleast_version='0.1.0')
+    autowaf.check_pkg(conf, 'sigc++-2.0', uselib_store='SIGCPP',
+                      atleast_version='2.0')
+
+    autowaf.check_pkg(conf, 'lv2', uselib_store='LV2',
+                      atleast_version='1.2.0', mandatory=True)
+    autowaf.check_pkg(conf, 'lv2', uselib_store='LV2_1_10_0',
+                      atleast_version='1.10.0', mandatory=False)
+    autowaf.check_pkg(conf, 'lv2', uselib_store='LV2_1_17_2',
+                      atleast_version='1.17.2', mandatory=False)
+    autowaf.check_pkg(conf, 'lv2', uselib_store='LV2_1_18_6',
+                      atleast_version='1.18.6', mandatory=False)
+    autowaf.check_pkg(conf, 'serd-0', uselib_store='SERD',
+                      atleast_version='0.14.0', mandatory=True)
+    autowaf.check_pkg(conf, 'sord-0', uselib_store='SORD',
+                      atleast_version='0.8.0', mandatory=True)
+    autowaf.check_pkg(conf, 'sratom-0', uselib_store='SRATOM',
+                      atleast_version='0.2.0', mandatory=True)
+    autowaf.check_pkg(conf, 'lilv-0', uselib_store='LILV',
+                      atleast_version='0.24.2', mandatory=True)
+    conf.define ('LV2_SUPPORT', 1)
+
+    conf.define ('USE_TLSF', 1)
+
+    # non-standard LV2 extention -- TODO: add option to disable??
+    if conf.is_defined ('HAVE_LV2_1_10_0'):
+        conf.define ('LV2_EXTENDED', 1)
+
+    #autowaf.check_pkg(conf, 'soundtouch', uselib_store='SOUNDTOUCH',
+    #                  atleast_version='1.8.0', mandatory=False)
+    autowaf.check_pkg(conf, 'cppunit', uselib_store='CPPUNIT',
+                      atleast_version='1.12.0', mandatory=False)
+    autowaf.check_pkg(conf, 'ogg', uselib_store='OGG', atleast_version='1.1.2')
+    autowaf.check_pkg(conf, 'flac', uselib_store='FLAC',
+                      atleast_version='1.2.1')
+    autowaf.check_pkg(conf, 'libcurl', uselib_store='CURL',
+                      atleast_version='7.55.0')
+
+    autowaf.check_pkg(conf, 'fftw3f', uselib_store='FFTW35F',
+                      atleast_version='3.3.5', mandatory=False)
+
+    conf.define('CURRENT_SESSION_FILE_VERSION', CURRENT_SESSION_FILE_VERSION)
+
+    conf.check(header_name='sys/vfs.h', define_name='HAVE_SYS_VFS_H',mandatory=False)
+    conf.check(header_name='sys/statvfs.h', define_name='HAVE_SYS_STATVFS_H',mandatory=False)
+
+    if re.search ("linux", sys.platform) is not None and Options.options.dist_target != 'mingw':
+        have_sys_ioprio = conf.check_cc(
+                msg="Checking for 'ioprio_set' syscall support",
+                features  = 'c',
+                mandatory = False,
+                execute   = False,
+                fragment = "#define _DEFAULT_SOURCE\n #include <unistd.h>\n#include <sys/syscall.h>\nint main () { syscall(SYS_ioprio_set, 1, 0, 8192); return 0; }")
+
+        if have_sys_ioprio:
+                conf.define('HAVE_IOPRIO', 1)
+                conf.env['HAVE_IOPRIO'] = True
+
+    conf.write_config_header('libardour-config.h', remove=False)
+
+    # Boost headers
+    autowaf.check_header(conf, 'cxx', 'boost/ptr_container/ptr_list.hpp')
+
+    if conf.env['WINDOWS_VST_SUPPORT'] == True:
+        conf.check(compiler='cxx', lib='gdi32', mandatory=True, uselib_store='GDI32')
+
+def build(bld):
+    # Library version (UNIX style major, minor, micro)
+    # major increment <=> incompatible changes
+    # minor increment <=> compatible changes (additions)
+    # micro increment <=> no interface changes
+    LIBARDOUR_LIB_VERSION = "3.0.0"
+
+    # remove '${DEFINES_ST:DEFINES}' from run_str.
+    # x86_64-w64-mingw32-as (mingw) -D flag is for debug messages
+    if bld.env['build_target'] == 'mingw':
+        class asm(Task.classes['asm']): run_str = '${AS} ${ASFLAGS} ${ASMPATH_ST:INCPATHS} ${AS_SRC_F}${SRC} ${AS_TGT_F}${TGT}'
+
+    # operate on copy to avoid adding sources twice
+    sources = list(libardour_sources)
+
+    # Library
+    if bld.is_defined ('INTERNAL_SHARED_LIBS'):
+        obj              = bld.shlib(features = 'c cxx cshlib cxxshlib', source=sources)
+        obj.cxxflags     = []
+        # macros for this shared library
+        obj.defines      = [ 'LIBARDOUR_DLL_EXPORTS=1' ]
+    else:
+        obj              = bld.stlib(features = 'c cxx cstlib cxxstlib', source=sources)
+        obj.cxxflags     = [ bld.env['compiler_flags_dict']['pic'] ]
+        obj.cflags       = [ bld.env['compiler_flags_dict']['pic'] ]
+        obj.defines      = []
+
+    obj.export_includes = ['.']
+    obj.includes     = ['.', '../vst3/', '../ctrl-interface/control_protocol', '..']
+    obj.name         = 'libardour'
+    obj.target       = 'ardour'
+    obj.uselib       = ['GLIBMM','GTHREAD','AUBIO','SIGCPP','XML','UUID', 'LO', 'USB',
+                        'SNDFILE','SAMPLERATE','LRDF','AUDIOUNITS', 'GIOMM', 'FFTW3F',
+                        'LILV','SERD','SORD',
+                        'OSX','BOOST','CURL','TAGLIB','VAMPSDK','VAMPHOSTSDK','RUBBERBAND']
+    obj.use          = ['libpbd','libmidipp','libevoral',
+                        'libaudiographer',
+                        'libtemporal',
+                        'liblua',
+                        'libptformat',
+                        'staffpad',
+                        'zita-resampler',
+                        'zita-convolver',
+                        ]
+    if bld.env['build_target'] not in ['mingw', 'msvc']:
+        obj.uselib += ['DL']
+    elif bld.env['build_target'] == 'mingw':
+        obj.cxxflags += ['-Og']
+    else: # MSVC
+        obj.defines +=  ['NOMINMAX', '_WINSOCKAPI_']
+        obj.lib      =  ['OLE32']
+
+    if bld.is_defined('USE_EXTERNAL_LIBS'):
+        obj.uselib.extend(['VAMPSDK', 'LIBLTC', 'LIBFLUIDSYNTH'])
+    else:
+        obj.use.extend(['librubberband', 'libltc_includes', 'libltc', 'libfluidsynth_includes', 'libfluidsynth', 'libptformat'])
+
+    obj.vnum         = LIBARDOUR_LIB_VERSION
+    obj.install_path = bld.env['LIBDIR']
+    obj.defines      += [
+        'PACKAGE="' + I18N_PACKAGE + bld.env['MAJOR'] + '"',
+        'DATA_DIR="' + autowaf.normpath(bld.env['DATADIR']) + '"',
+        'CONFIG_DIR="' + autowaf.normpath(bld.env['SYSCONFDIR']) + '"',
+        'LOCALEDIR="' + autowaf.normpath(bld.env['LOCALEDIR']) + '"',
+        'LIBARDOUR="' + bld.env['lwrcase_dirname'] + '"'
+        ]
+
+    if bld.is_defined('HAVE_SOUNDTOUCH'):
+        obj.source += ['st_stretch.cc']
+        #obj.source += ' st_stretch.cc '
+        obj.uselib += ['SOUNDTOUCH']
+    #obj.add_objects = 'default/libs/surfaces/control_protocol/smpte_1.o'
+
+    if bld.is_defined('HAVE_SUIL'):
+        obj.use += [ 'libsuil' ]
+
+    if bld.is_defined('WINDOWS_VST_SUPPORT'):
+        obj.source += [ 'windows_vst_plugin.cc']
+        obj.defines += [ 'WINDOWS_VST_SUPPORT' ]
+        obj.includes += [ '../fst' ]
+        obj.use += [ 'vstwin' ]
+        obj.uselib += ['GDI32']
+
+    if bld.is_defined('LXVST_SUPPORT'):
+        obj.source += [ 'lxvst_plugin.cc', 'linux_vst_support.cc' ]
+        obj.defines += [ 'LXVST_SUPPORT' ]
+
+    if bld.is_defined('WINDOWS_VST_SUPPORT') or bld.is_defined('LXVST_SUPPORT') or bld.is_defined('MACVST_SUPPORT'):
+        obj.source += [ 'session_vst.cc', 'vst_plugin.cc', 'vst_state.cc', 'vst2_scan.cc' ]
+
+    if bld.is_defined('MACVST_SUPPORT'):
+        obj.source += [ 'mac_vst_plugin.cc', 'mac_vst_support.cc' ]
+        obj.defines += [ 'MACVST_SUPPORT' ]
+
+    if bld.is_defined('VST3_SUPPORT'):
+        obj.source += [ 'vst3_plugin.cc', 'vst3_module.cc', 'vst3_host.cc', 'vst3_scan.cc' ]
+        obj.defines += [ 'VST3_SUPPORT' ]
+
+    if bld.is_defined('HAVE_COREAUDIO'):
+        obj.source += [ 'coreaudiosource.cc', 'caimportable.cc' ]
+        obj.use    += ['libappleutility']
+
+    if bld.is_defined('AUDIOUNIT_SUPPORT'):
+        obj.source += [ 'audio_unit.cc', 'auv2_scan.cc' ]
+
+    lua_cxxflags = bld.env['compiler_flags_dict']['pic']
+    lua_use = list(obj.use);
+    if bld.env['build_target'] == 'mingw' and bld.env['DEBUG']:
+        lua_cxxflags += " -Og -Wa,-mbig-obj"
+    elif bld.env['build_target'] == 'msvc' and bld.env['DEBUG']:
+        lua_cxxflags += " /bigobj"
+
+    bld(features = 'cxx cxxstlib asm',
+        source   = "luabindings.cc" ,
+        cxxflags = lua_cxxflags,
+        includes = obj.includes,
+        use      = lua_use,
+        uselib   = obj.uselib,
+        target   = 'luabindings')
+
+    obj.use += ['luabindings' ]
+
+    # --- NAM (NeuralAmpModelerCore, lib TIERCE MIT) : module MasterTapePCM1630 (capture PCM-1630).
+    #     Compilée en stlib ISOLÉE en C++20 (NAM exige concepts/span) ; le reste d'Ardour reste C++17. ---
+    nam_src = [
+        '../NeuralAmpModelerCore/NAM/activations.cpp',
+        '../NeuralAmpModelerCore/NAM/container.cpp',
+        '../NeuralAmpModelerCore/NAM/conv1d.cpp',
+        '../NeuralAmpModelerCore/NAM/convnet.cpp',
+        '../NeuralAmpModelerCore/NAM/dsp.cpp',
+        '../NeuralAmpModelerCore/NAM/get_dsp.cpp',
+        '../NeuralAmpModelerCore/NAM/linear.cpp',
+        '../NeuralAmpModelerCore/NAM/lstm.cpp',
+        '../NeuralAmpModelerCore/NAM/ring_buffer.cpp',
+        '../NeuralAmpModelerCore/NAM/util.cpp',
+        '../NeuralAmpModelerCore/NAM/wavenet/model.cpp',
+        '../NeuralAmpModelerCore/NAM/wavenet/slimmable.cpp',
+        'MasterTapePCM1630.cc',   # wrapper Oxford (impl NAM, C++20)
+    ]
+    # Construite en DLL SÉPARÉE (cxxshlib), PAS fusionnée dans ardour.dll : isole totalement
+    # l'ABI C++20 (concepts/span/STL C++20) du reste d'Ardour qui est C++17. Fusionner des .o
+    # C++20 dans ardour.dll (C++17) via --whole-archive faisait fusionner par le linker des
+    # symboles STL weak/COMDAT des deux standards -> corruption du tas au démarrage (heap block
+    # 1 octet écrasé). En DLL à part, ses TUs (donc les objets statiques ConfigParserHelper qui
+    # enregistrent les parsers WaveNet/LSTM/ConvNet) sont tous inclus et s'exécutent au CHARGEMENT
+    # de la DLL -> plus besoin de --whole-archive, plus de fusion d'ABI.
+    bld(features = 'cxx cxxshlib',
+        source   = nam_src,
+        target   = 'nam_core',
+        name     = 'nam_core',
+        install_path = bld.env['LIBDIR'],
+        includes = ['.',
+                    '../NeuralAmpModelerCore/NAM',
+                    '../NeuralAmpModelerCore/Dependencies/eigen',
+                    '../NeuralAmpModelerCore/Dependencies/nlohmann'],
+        # PERF NAM : les flags globaux d'Ardour incluent -fno-inline-functions (désastreux
+        # pour Eigen/WaveNet, qui reposent sur l'inlining agressif) et seulement -msse (SSE2,
+        # pas d'AVX/FMA). On les OVERRIDE ici (le dernier flag gagne) -> inférence ~2-4x plus
+        # rapide. nam_core.dll est buildée sur la machine du user (i9-12900K, AVX2+FMA) pour
+        # cette même machine : AVX2/FMA sans souci de portabilité. Eigen reste interne à la DLL
+        # (l'API du wrapper est float*/string) -> pas de problème d'ABI/alignement cross-DLL.
+        cxxflags = [ bld.env['compiler_flags_dict']['pic'], '-std=gnu++20', '-w',
+                     '-DNOMINMAX', '-DWIN32_LEAN_AND_MEAN', '-DNAM_SAMPLE_FLOAT',
+                     '-O3', '-ffast-math', '-finline-functions', '-funroll-loops',
+                     '-mavx2', '-mfma', '-mf16c' ])
+    obj.use += ['nam_core']
+
+    avx_sources = []
+    fma_sources = []
+    avx512f_sources = []
+
+    if not Options.options.no_fpu_optimization:
+        if (bld.env['build_target'] == 'i386' or bld.env['build_target'] == 'i686'):
+            obj.source += [ 'sse_functions_xmm.cc', 'sse_functions.s', ]
+            avx_sources = [ 'sse_functions_avx_linux.cc' ]
+            fma_sources = [ 'x86_functions_fma.cc' ]
+            avx512f_sources = [ 'x86_functions_avx512f.cc' ]
+        elif bld.env['build_target'] == 'x86_64':
+            obj.source += [ 'sse_functions_xmm.cc', 'sse_functions_64bit.s', ]
+            avx_sources = [ 'sse_functions_avx_linux.cc' ]
+            fma_sources = [ 'x86_functions_fma.cc' ]
+            avx512f_sources = [ 'x86_functions_avx512f.cc' ]
+        elif bld.env['build_target'] == 'mingw':
+            # usability of the 64 bit windows assembler depends on the compiler target,
+            # not the build host, which in turn can only be inferred from the name
+            # of the compiler.
+            if re.search ('x86_64-w64', str(bld.env['CC'])):
+                obj.source += [ 'sse_functions_xmm.cc' ]
+                obj.source += [ 'sse_functions_64bit_win.s',  'sse_avx_functions_64bit_win.s' ]
+                avx_sources = [ 'sse_functions_avx.cc' ]
+                fma_sources = [ 'x86_functions_fma.cc' ]
+                avx512f_sources = [ 'x86_functions_avx512f.cc' ]
+        elif bld.env['build_target'] == 'aarch64':
+            obj.source += ['aarch64_neon_functions.cc']
+            obj.defines += [ 'ARM_NEON_SUPPORT' ]
+
+        elif bld.env['build_target'] == 'armhf':
+            # 32bit ARM needs -mfpu=neon
+            arm_neon_cxxflags = list(bld.env['CXXFLAGS'])
+            arm_neon_cxxflags.append (bld.env['compiler_flags_dict']['neon'])
+            bld(features = 'cxx cxxstlib asm',
+                source   = ['arm_neon_functions.cc'],
+                cxxflags = arm_neon_cxxflags,
+                includes = [ '.' ],
+                definfes = obj.defines,
+                use = [ 'libpbd', 'libevoral'],
+                uselib = [ 'GLIBMM', 'XML' ],
+                target   = 'arm_neon_functions')
+
+            obj.use += ['arm_neon_functions' ]
+            obj.defines += [ 'ARM_NEON_SUPPORT' ]
+
+        if avx_sources:
+            # as long as we want to use AVX intrinsics in this file,
+            # compile it with -mavx flag - append avx flag to the existing
+            avx_cxxflags = list(bld.env['CXXFLAGS'])
+            avx_cxxflags.append (bld.env['compiler_flags_dict']['avx'])
+            avx_cxxflags.append (bld.env['compiler_flags_dict']['pic'])
+            bld(features = 'cxx cxxstlib asm',
+                source   = avx_sources,
+                cxxflags = avx_cxxflags,
+                includes = [ '.' ],
+                use = [ 'libtemporal', 'libpbd', 'libevoral', 'liblua' ],
+                uselib = [ 'GLIBMM', 'XML' ],
+                target   = 'sse_avx_functions')
+
+            obj.use += ['sse_avx_functions' ]
+
+        if bld.is_defined('FPU_AVX_FMA_SUPPORT') and fma_sources:
+            fma_cxxflags = list(bld.env['CXXFLAGS'])
+            fma_cxxflags.append (bld.env['compiler_flags_dict']['avx'])
+            fma_cxxflags.append (bld.env['compiler_flags_dict']['pic'])
+            fma_cxxflags.append (bld.env['compiler_flags_dict']['fma'])
+
+            bld(features = 'cxx cxxstlib asm',
+                source   = fma_sources,
+                cxxflags = fma_cxxflags,
+                includes = [ '.' ],
+                use = [ 'libtemporal', 'libpbd', 'libevoral', 'liblua' ],
+                uselib = [ 'GLIBMM', 'XML' ],
+                target   = 'sse_fma_functions')
+
+            obj.use += ['sse_fma_functions' ]
+            obj.defines += [ 'FPU_AVX_FMA_SUPPORT' ]
+
+        if bld.is_defined('FPU_AVX512F_SUPPORT') and avx512f_sources:
+            avx512f_cxxflags = list(bld.env['CXXFLAGS'])
+            avx512f_cxxflags.append (bld.env['compiler_flags_dict']['avx512f'])
+            avx512f_cxxflags.append (bld.env['compiler_flags_dict']['avx'])
+            avx512f_cxxflags.append (bld.env['compiler_flags_dict']['pic'])
+            avx512f_cxxflags.append (bld.env['compiler_flags_dict']['fma'])
+            # work around issue with mingc/gcc-8
+            # https://stackoverflow.com/questions/43152633/invalid-register-for-seh-savexmm-in-cygwin
+            if bld.env['build_target'] == 'mingw':
+                avx512f_cxxflags.append ('-fno-asynchronous-unwind-tables')
+
+            bld(features = 'cxx cxxstlib asm',
+                source   = avx512f_sources,
+                cxxflags = avx512f_cxxflags,
+                includes = [ '.' ],
+                use = [ 'libtemporal', 'libpbd', 'libevoral', 'liblua' ],
+                uselib = [ 'GLIBMM', 'XML' ],
+                target   = 'avx512f_functions')
+
+            obj.use += ['avx512f_functions' ]
+            obj.defines += [ 'FPU_AVX512F_SUPPORT' ]
+
+    # chord definitions
+    bld.install_files (bld.env['DATADIR'], '../../share/chords.txt')
+
+    # i18n
+    if bld.is_defined('ENABLE_NLS'):
+        mo_files = bld.path.ant_glob('po/*.mo')
+        for mo in mo_files:
+            lang = os.path.basename(mo.srcpath()).replace('.mo', '')
+            bld.install_as(os.path.join(bld.env['LOCALEDIR'], lang, 'LC_MESSAGES', I18N_PACKAGE + bld.env['MAJOR'] + '.mo'),
+                           mo)
+
+    if bld.env['BUILD_TESTS'] and bld.is_defined('HAVE_CPPUNIT'):
+        # Unit tests
+        # only build these common sources once
+        testcommon              = bld(features = 'cxx')
+        testcommon.includes     = obj.includes + ['test', '../pbd', '..']
+        testcommon.source       = ['test/testrunner.cc', 'test/test_needing_session.cc',
+                                   'test/dummy_lxvst.cc', 'test/audio_region_test.cc', 'test/test_util.cc', 'test/test_ui.cc']
+        testcommon.uselib       = ['CPPUNIT','SIGCPP','GLIBMM','GTHREAD', 'OSX', 'FFTW3F', 'USB',
+                                   'SAMPLERATE','XML','LRDF','COREAUDIO','TAGLIB','VAMPSDK','VAMPHOSTSDK','RUBBERBAND']
+        testcommon.use          = ['libpbd', 'libmidipp', 'libevoral', 'libaudiographer', 'libardour']
+        if bld.is_defined('USE_EXTERNAL_LIBS'):
+            testcommon.uselib.extend(['LIBLTC', 'LIBFLUIDSYNTH'])
+        else:
+            testcommon.use.extend(['libltc', 'librubberband', 'libfluidsynth'])
+        testcommon.defines      = [
+            'PACKAGE="libardour' + bld.env['MAJOR'] + 'test"',
+            'DATA_DIR="' + autowaf.normpath(bld.env['DATADIR']) + '"',
+            'CONFIG_DIR="' + autowaf.normpath(bld.env['SYSCONFDIR']) + '"',
+            'LOCALEDIR="' + autowaf.normpath(bld.env['LOCALEDIR']) + '"',
+            ]
+        testcommon.name         = 'testcommon'
+
+        if bld.env['SINGLE_TESTS']:
+            create_ardour_test_program(bld, obj.includes, 'unit-test-audio_engine', 'test_audio_engine', ['test/audio_engine_test.cc'])
+            create_ardour_test_program(bld, obj.includes, 'unit-test-automation_list_property', 'test_automation_list_property', ['test/automation_list_property_test.cc'])
+            #create_ardour_test_program(bld, obj.includes, 'unit-test-bbt', 'test_bbt', ['test/bbt_test.cc'])
+            create_ardour_test_program(bld, obj.includes, 'unit-test-fpu', 'test_fpu', ['test/fpu_test.cc'])
+            #create_ardour_test_program(bld, obj.includes, 'unit-test-tempo', 'test_tempo', ['test/tempo_test.cc'])
+            create_ardour_test_program(bld, obj.includes, 'unit-test-lua_script', 'test_lua_script', ['test/lua_script_test.cc'])
+            create_ardour_test_program(bld, obj.includes, 'unit-test-midi_clock', 'test_midi_clock', ['test/midi_clock_test.cc'])
+            create_ardour_test_program(bld, obj.includes, 'unit-test-resampled_source', 'test_resampled_source', ['test/resampled_source_test.cc'])
+            #create_ardour_test_program(bld, obj.includes, 'unit-test-samplewalk_to_beats', 'test_samplewalk_to_beats', ['test/samplewalk_to_beats_test.cc'])
+            #create_ardour_test_program(bld, obj.includes, 'unit-test-samplepos_plus_beats', 'test_samplepos_plus_beats', ['test/samplepos_plus_beats_test.cc'])
+            create_ardour_test_program(bld, obj.includes, 'unit-test-playlist_equivalent_regions', 'test_playlist_equivalent_regions', ['test/playlist_equivalent_regions_test.cc'])
+            create_ardour_test_program(bld, obj.includes, 'unit-test-playlist_layering', 'test_playlist_layering', ['test/playlist_layering_test.cc'])
+            create_ardour_test_program(bld, obj.includes, 'unit-test-plugins', 'test_plugins', ['test/plugins_test.cc'])
+            create_ardour_test_program(bld, obj.includes, 'unit-test-region_naming', 'test_region_naming', ['test/region_naming_test.cc'])
+            create_ardour_test_program(bld, obj.includes, 'unit-test-control_surface', 'test_control_surfaces', ['test/control_surfaces_test.cc'])
+            create_ardour_test_program(bld, obj.includes, 'unit-test-mtdm', 'test_mtdm', ['test/mtdm_test.cc'])
+            create_ardour_test_program(bld, obj.includes, 'unit-test-sha1', 'test_sha1', ['test/sha1_test.cc'])
+            create_ardour_test_program(bld, obj.includes, 'unit-test-session', 'test_session', ['test/session_test.cc'])
+            create_ardour_test_program(bld, obj.includes, 'unit-test-dsp_load_calculator', 'test_dsp_load_calculator', ['test/dsp_load_calculator_test.cc'])
+
+        test_sources  = [
+            'test/audio_engine_test.cc',
+            'test/automation_list_property_test.cc',
+            #'test/bbt_test.cc',
+            'test/dsp_load_calculator_test.cc',
+            'test/fpu_test.cc',
+            #'test/tempo_test.cc',
+            'test/lua_script_test.cc',
+            'test/midi_clock_test.cc',
+            'test/resampled_source_test.cc',
+            #'test/samplewalk_to_beats_test.cc',
+            #'test/samplepos_plus_beats_test.cc',
+            'test/playlist_equivalent_regions_test.cc',
+            'test/playlist_layering_test.cc',
+            'test/plugins_test.cc',
+            'test/region_naming_test.cc',
+            'test/control_surfaces_test.cc',
+            'test/mtdm_test.cc',
+            'test/sha1_test.cc',
+            'test/session_test.cc',
+        ]
+
+# Tests that don't work
+#                test/playlist_read_test.cc
+#                test/audio_region_read_test.cc
+#                test/combine_regions_test.cc
+#                test/mantis_3356_test.cc
+
+        create_ardour_test_program(bld, obj.includes, 'libardour-tests', 'run-tests', test_sources)
+
+        # Utility to load and save a session
+        load_save_session = bld(features = 'cxx cxxprogram')
+        load_save_session.source = '''
+                    test/test_util.cc
+                    test/test_ui.cc
+                    test/load_save_session.cc
+                    test/dummy_lxvst.cc
+            '''.split()
+
+        load_save_session.includes  = obj.includes
+        load_save_session.includes.append ('test')
+        load_save_session.uselib    = ['CPPUNIT','SIGCPP','GLIBMM','GTHREAD', 'OSX',
+                             'SAMPLERATE','XML','LRDF','COREAUDIO', 'FFTW3F']
+        load_save_session.use       = ['libpbd','libmidipp','libardour']
+        load_save_session.name      = 'libardour-load-save-session'
+        load_save_session.target    = 'load-save-session'
+        load_save_session.install_path = ''
+        load_save_session.defines      = [
+            'PACKAGE="libardour' + bld.env['MAJOR'] + 'profile"',
+            'DATA_DIR="' + autowaf.normpath(bld.env['DATADIR']) + '"',
+            'CONFIG_DIR="' + autowaf.normpath(bld.env['SYSCONFDIR']) + '"',
+            'LOCALEDIR="' + autowaf.normpath(bld.env['LOCALEDIR']) + '"',
+            ]
+
+        # Profiling
+        for p in ['runpc', 'lots_of_regions', 'load_session']:
+            profilingobj = bld(features = 'cxx cxxprogram')
+            profilingobj.source = '''
+                    test/dummy_lxvst.cc
+                    test/test_util.cc
+                    test/test_ui.cc
+            '''.split()
+
+            profilingobj.source.append('test/profiling/%s.cc' % p)
+
+            profilingobj.includes  = obj.includes
+            profilingobj.includes.append ('test')
+            profilingobj.uselib    = ['CPPUNIT','SIGCPP','GLIBMM','GTHREAD',
+                             'SAMPLERATE','XML','LRDF','COREAUDIO', 'FFTW3F']
+            profilingobj.use       = ['libpbd','libmidipp','libardour']
+            profilingobj.name      = 'libardour-profiling'
+            profilingobj.target    = p
+            profilingobj.install_path = ''
+            profilingobj.defines      = [
+                'PACKAGE="libardour' + bld.env['MAJOR'] + 'profile"',
+                'DATA_DIR="' + autowaf.normpath(bld.env['DATADIR']) + '"',
+                'CONFIG_DIR="' + autowaf.normpath(bld.env['SYSCONFDIR']) + '"',
+                'LOCALEDIR="' + autowaf.normpath(bld.env['LOCALEDIR']) + '"',
+                ]
+
+def create_ardour_test_program(bld, includes, name, target, sources):
+    testobj              = bld(features = 'cxx cxxprogram')
+    testobj.includes     = includes + ['test', '../pbd', '..']
+    testobj.source       = sources
+    testobj.uselib       = ['CPPUNIT','SIGCPP','GLIBMM','GTHREAD', 'FFTW3F', 'OSX', 'USB',
+                            'SAMPLERATE','XML','LRDF','COREAUDIO','TAGLIB','VAMPSDK','VAMPHOSTSDK','RUBBERBAND']
+    testobj.use          = [ 'testcommon' ]
+    testobj.name         = name
+    testobj.target       = target
+    testobj.install_path = ''
+    testobj.defines      = [
+        'PACKAGE="libardour' + bld.env['MAJOR'] + 'test"',
+        'DATA_DIR="' + autowaf.normpath(bld.env['DATADIR']) + '"',
+        'CONFIG_DIR="' + autowaf.normpath(bld.env['SYSCONFDIR']) + '"',
+        'LOCALEDIR="' + autowaf.normpath(bld.env['LOCALEDIR']) + '"',
+        ]
+
+def i18n_func(bld):
+    autowaf.build_i18n(bld, '.', 'libs/ardour', I18N_PACKAGE + bld.env['MAJOR'], libardour_sources,
+                       'Paul Davis')
+
+def i18n_pot_func(bld):
+    autowaf.build_i18n_pot(bld, '.', 'libs/ardour', I18N_PACKAGE + bld.env['MAJOR'], libardour_sources,
+                       'Paul Davis')
+
+def i18n_po_func(bld):
+    autowaf.build_i18n_po(bld, '.', 'libs/ardour', I18N_PACKAGE + bld.env['MAJOR'], libardour_sources,
+                       'Paul Davis')
+
+def i18n_mo_func(bld):
+    autowaf.build_i18n_mo(bld, '.', 'libs/ardour', I18N_PACKAGE + bld.env['MAJOR'], libardour_sources,
+                       'Paul Davis')

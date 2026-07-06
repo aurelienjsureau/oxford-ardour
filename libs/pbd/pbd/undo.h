@@ -1,0 +1,148 @@
+/*
+ * Copyright (C) 2002 Brett Viren
+ * Copyright (C) 2006-2015 Paul Davis <paul@linuxaudiosystems.com>
+ * Copyright (C) 2006 Hans Fugal <hans@fugal.net>
+ * Copyright (C) 2007-2009 David Robillard <d@drobilla.net>
+ * Copyright (C) 2013 John Emmas <john@creativepost.co.uk>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
+
+#pragma once
+
+#include <list>
+#include <map>
+#include <string>
+
+#include <glibmm/datetime.h>
+
+#include <sigc++/bind.h>
+#include <sigc++/slot.h>
+
+#include "pbd/command.h"
+#include "pbd/libpbd_visibility.h"
+
+namespace PBD {
+
+typedef sigc::slot<void> UndoAction;
+
+class LIBPBD_API UndoTransaction : public PBD::Command
+{
+public:
+	UndoTransaction ();
+	UndoTransaction (const UndoTransaction&);
+	UndoTransaction& operator= (const UndoTransaction&);
+	~UndoTransaction ();
+
+	void clear ();
+	bool empty () const;
+	bool clearing () const {
+		return _clearing;
+	}
+
+	void add_command (PBD::Command* const);
+	void remove_command (PBD::Command* const);
+
+	std::list<PBD::Command*>::size_type size() const { return actions.size(); }
+
+	void operator() ();
+	void undo ();
+	void redo ();
+
+	XMLNode& get_state () const;
+
+	void set_timestamp (GDateTime* t)
+	{
+		_timestamp = Glib::DateTime (t);
+	}
+
+	void set_timestamp (Glib::DateTime const& t)
+	{
+		_timestamp = Glib::DateTime (t);
+	}
+
+	Glib::DateTime const& timestamp () const
+	{
+		return _timestamp;
+	}
+
+private:
+	std::list<PBD::Command*> actions;
+	Glib::DateTime          _timestamp;
+	bool                    _clearing;
+
+	void about_to_explicitly_delete ();
+};
+
+class LIBPBD_API UndoHistory : public PBD::ScopedConnectionList
+{
+public:
+	UndoHistory ();
+	~UndoHistory () {}
+
+	void add (UndoTransaction* ut);
+	void undo (unsigned int n);
+	void redo (unsigned int n);
+
+	unsigned long undo_depth () const
+	{
+		return UndoList.size ();
+	}
+	unsigned long redo_depth () const
+	{
+		return RedoList.size ();
+	}
+
+	std::string next_undo () const
+	{
+		return (UndoList.empty () ? std::string () : UndoList.back ()->name ());
+	}
+	std::string next_redo () const
+	{
+		return (RedoList.empty () ? std::string () : RedoList.back ()->name ());
+	}
+
+	void clear ();
+	void clear_undo ();
+	void clear_redo ();
+
+	/* returns all or part of the history.
+	 * If depth==0 it returns just the top
+	 * node. If depth<0, it returns everything.
+	 * If depth>0, it returns state for that
+	 * many elements of the history, or
+	 * the full history, whichever is smaller.
+	 */
+
+	XMLNode& get_state (int32_t depth = 0);
+	void     save_state ();
+
+	void set_depth (uint32_t);
+
+	PBD::Signal<void()> Changed;
+	PBD::Signal<void()> BeginUndoRedo;
+	PBD::Signal<void()> EndUndoRedo;
+
+private:
+	bool                        _clearing;
+	uint32_t                    _depth;
+	std::list<UndoTransaction*> UndoList;
+	std::list<UndoTransaction*> RedoList;
+
+	void remove (UndoTransaction*);
+};
+
+} /* namespace */
+

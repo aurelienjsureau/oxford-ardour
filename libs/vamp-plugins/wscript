@@ -1,0 +1,54 @@
+#!/usr/bin/env python
+from waflib.extras import autowaf as autowaf
+import os
+
+def options(opt):
+    pass
+
+def configure(conf):
+    autowaf.check_pkg(conf, 'fftw3f', uselib_store='FFTW3F', mandatory=True)
+    autowaf.check_pkg(conf, 'aubio', uselib_store='AUBIO',
+                      atleast_version='0.3.2')
+    autowaf.check_pkg(conf, 'aubio', uselib_store='AUBIO4',
+                      atleast_version='0.4.0', mandatory=False)
+    conf.write_config_header('libvampplugins-config.h', remove=False)
+
+def build(bld):
+    # Library
+    obj = bld(features = 'cxx cxxshlib')
+    obj.source = '''
+            plugins.cpp
+            AmplitudeFollower.cpp
+            BarBeatTrack.cpp
+            BeatTrack.cpp
+            ChromagramPlugin.cpp
+            EBUr128.cpp
+            ebu_r128_proc.cc
+            KeyDetect.cpp
+            OnsetDetect.cpp
+            PercussionOnsetDetector.cpp
+            SimilarityPlugin.cpp
+            SpectralCentroid.cpp
+            TonalChangeDetect.cpp
+            Transcription.cpp
+            TruePeak.cpp
+            ZeroCrossing.cpp
+    '''
+    obj.export_includes = ['.']
+    obj.includes     = ['.']
+    obj.name         = 'libardourvampplugins'
+    # TRIDENT/MinGW : forcer le préfixe "lib" dans le NOM DE FICHIER. Sous Windows
+    # waf ne l'ajoute pas (-> ardourvampplugins.dll) et la clé Vamp devient
+    # "ardourvampplugins", alors qu'Ardour (et les scripts Lua) demandent
+    # "libardourvampplugins:..." -> EBU R128 / loudness "missing". Cf. le .def MSVC.
+    obj.target       = 'libardourvampplugins'
+    obj.uselib       = 'FFTW3F VAMPSDK QMDSP'
+    obj.use          = 'libvampplugin libqm-dsp'
+    autowaf.ensure_visible_symbols (obj, True)
+    if bld.is_defined('HAVE_AUBIO4'):
+        obj.source += ' Onset.cpp '
+        obj.uselib += ' AUBIO4 '
+    elif bld.is_defined('HAVE_AUBIO'):
+        obj.source += ' Onset.cpp '
+        obj.uselib += ' AUBIO '
+    obj.install_path = os.path.join(bld.env['LIBDIR'], 'vamp')

@@ -1,0 +1,239 @@
+/*
+ * Copyright (C) 2016-2017 Paul Davis <paul@linuxaudiosystems.com>
+ * Copyright (C) 2017 Robin Gareus <robin@gareus.org>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
+
+#include <vector>
+
+#include "pbd/convert.h"
+#include "pbd/error.h"
+#include "pbd/xml++.h"
+
+#include "ardour/slavable.h"
+#include "ardour/slavable_automation_control.h"
+#include "ardour/vca.h"
+#include "ardour/vca_manager.h"
+
+#include "pbd/i18n.h"
+
+using namespace PBD;
+using namespace ARDOUR;
+
+std::string Slavable::xml_node_name = X_("Slavable");
+PBD::Signal<void(VCAManager*)> Slavable::Assign; /* signal sent once
+                                                  * assignment is possible */
+
+Slavable::Slavable ()
+{
+	Assign.connect_same_thread (assign_connection, std::bind (&Slavable::do_assign, this, _1));
+}
+
+XMLNode&
+Slavable::get_state () const
+{
+	XMLNode* node = new XMLNode (xml_node_name);
+	XMLNode* child;
+
+	PBD::RWLock::ReaderLock lm (master_lock);
+	for (std::set<uint32_t>::const_iterator i = _masters.begin(); i != _masters.end(); ++i) {
+		child = new XMLNode (X_("Master"));
+		child->set_property (X_("number"), *i);
+		node->add_child_nocopy (*child);
+	}
+
+	return *node;
+}
+
+std::vector<std::shared_ptr<VCA> >
+Slavable::masters (VCAManager* manager) const
+{
+	std::vector<std::shared_ptr<VCA> > rv;
+	PBD::RWLock::ReaderLock lm (master_lock);
+	for (std::set<uint32_t>::const_iterator i = _masters.begin(); i != _masters.end(); ++i) {
+		rv.push_back (manager->vca_by_number (*i));
+	}
+	return rv;
+}
+
+bool
+Slavable::assigned_to (VCAManager* manager, std::shared_ptr<VCA> mst) const
+{
+	if (mst.get () == this) {
+		return true;
+	}
+	std::vector<std::shared_ptr<VCA> > ml = mst->masters (manager);
+	for (std::vector<std::shared_ptr<VCA> >::const_iterator i = ml.begin (); i != ml.end(); ++i) {
+		if (assigned_to (manager, *i)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+int
+Slavable::set_state (XMLNode const& node, int version)
+{
+	if (node.name() != xml_node_name) {
+		return -1;
+	}
+
+	XMLNodeList const& children (node.children());
+	PBD::RWLock::WriterLock lm (master_lock);
+
+	for (XMLNodeList::const_iterator i = children.begin(); i != children.end(); ++i) {
+		if ((*i)->name() == X_("Master")) {
+			uint32_t n;
+			if ((*i)->get_property (X_("number"), n)) {
+				_masters.insert (n);
+			}
+		}
+	}
+
+	return 0;
+}
+
+int
+Slavable::do_assign (VCAManager* manager)
+{
+	std::vector<std::shared_ptr<VCA> > vcas;
+
+	{
+		PBD::RWLock::ReaderLock lm (master_lock);
+
+		for (std::set<uint32_t>::const_iterator i = _masters.begin(); i != _masters.end(); ++i) {
+			std::shared_ptr<VCA> v = manager->vca_by_number (*i);
+			if (v) {
+				vcas.push_back (v);
+			} else {
+				warning << string_compose (_("Master #%1 not found, assignment lost"), *i) << endmsg;
+			}
+		}
+	}
+
+	/* now that we've released the lock, we can do the assignments */
+
+	if (!vcas.empty()) {
+
+		for (std::vector<std::shared_ptr<VCA> >::iterator v = vcas.begin(); v != vcas.end(); ++v) {
+			assign (*v);
+		}
+
+		SlavableAutomationControlList scl = slavables ();
+		for (SlavableAutomationControlList::iterator i = scl.begin(); i != scl.end(); ++i) {
+				(*i)->use_saved_master_ratios ();
+		}
+	}
+
+	assign_connection.disconnect ();
+
+	return 0;
+}
+
+void
+Slavable::assign (std::shared_ptr<VCA> v)
+{
+	assert (v);
+	{
+		PBD::RWLock::WriterLock lm (master_lock);
+		if (assign_controls (v)) {
+			_masters.insert (v->number());
+		}
+
+		/* Do NOT use ::unassign() because it will store a
+		 * std::shared_ptr<VCA> in the functor, leaving a dangling ref to the
+		 * VCA.
+		 */
+
+
+		v->Drop.connect_same_thread (unassign_connections, std::bind (&Slavable::weak_unassign, this, std::weak_ptr<VCA>(v)));
+		v->DropReferences.connect_same_thread (unassign_connections, std::bind (&Slavable::weak_unassign, this, std::weak_ptr<VCA>(v)));
+	}
+
+	AssignmentChange (v, true);
+}
+
+void
+Slavable::weak_unassign (std::weak_ptr<VCA> v)
+{
+	std::shared_ptr<VCA> sv (v.lock());
+	if (sv) {
+		unassign (sv);
+	}
+}
+
+void
+Slavable::unassign (std::shared_ptr<VCA> v)
+{
+	{
+		PBD::RWLock::WriterLock lm (master_lock);
+
+		unassign_controls (v);
+		if (v) {
+			_masters.erase (v->number());
+		} else {
+			_masters.clear ();
+		}
+	}
+	AssignmentChange (v, false);
+}
+
+bool
+Slavable::assign_controls (std::shared_ptr<VCA> vca)
+{
+	bool rv = false;
+	SlavableAutomationControlList scl = slavables ();
+	for (SlavableAutomationControlList::iterator i = scl.begin(); i != scl.end(); ++i) {
+		rv |= assign_control (vca, *i);
+	}
+	return rv;
+}
+
+void
+Slavable::unassign_controls (std::shared_ptr<VCA> vca)
+{
+	SlavableAutomationControlList scl = slavables ();
+	for (SlavableAutomationControlList::iterator i = scl.begin(); i != scl.end(); ++i) {
+		unassign_control (vca, *i);
+	}
+}
+
+bool
+Slavable::assign_control (std::shared_ptr<VCA> vca, std::shared_ptr<SlavableAutomationControl> slave)
+{
+	std::shared_ptr<AutomationControl> master;
+	master = vca->automation_control (slave->parameter());
+	if (!master) {
+		return false;
+	}
+	slave->add_master (master);
+	return true;
+}
+
+void
+Slavable::unassign_control (std::shared_ptr<VCA> vca, std::shared_ptr<SlavableAutomationControl> slave)
+{
+	if (!vca) {
+		/* unassign from all */
+		slave->clear_masters ();
+	} else {
+		std::shared_ptr<AutomationControl> master;
+		master = vca->automation_control (slave->parameter());
+		if (master) {
+			slave->remove_master (master);
+		}
+	}
+}

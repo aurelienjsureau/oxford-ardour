@@ -1,0 +1,97 @@
+/*
+ * Copyright (C) 2011-2012 Carl Hetherington <carl@carlh.net>
+ * Copyright (C) 2015-2019 Robin Gareus <robin@gareus.org>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
+
+#ifndef __ardour_visibility_group__
+#define __ardour_visibility_group__
+
+#include <ytkmm/liststore.h>
+#include <ytkmm/widget.h>
+
+#include "pbd/signals.h"
+
+class XMLNode;
+class XMLProperty;
+
+/** A class to manage a group of widgets where the visibility of each
+ *  can be configured by the user.  The class can generate a menu to
+ *  set up visibility, and save and restore visibility state to XML.
+ */
+
+class VisibilityGroup
+{
+public:
+	VisibilityGroup (std::string const &);
+
+	void add (
+		Gtk::Widget *,
+		std::string const &,
+		std::string const &,
+		bool visible = false,
+		std::function<std::optional<bool> ()> = 0
+		);
+
+	Gtk::Widget* list_view ();
+	bool button_press_event (GdkEventButton *);
+	void update ();
+	void set_state (XMLNode const &);
+	void set_state (std::string);
+	std::string get_state_name () const;
+	std::string get_state_value () const;
+
+	PBD::Signal<void()> VisibilityChanged;
+
+	static std::string remove_element (std::string const& from, std::string const& element);
+	static std::string add_element (std::string const& from, std::string const& element);
+
+private:
+
+	struct Member {
+		Gtk::Widget* widget;
+		std::string  id;
+		std::string  name;
+		bool         visible;
+		std::function<std::optional<bool> ()> override;
+	};
+
+	class ModelColumns : public Gtk::TreeModelColumnRecord {
+	public:
+		ModelColumns () {
+			add (_visible);
+			add (_name);
+			add (_iterator);
+		}
+
+		Gtk::TreeModelColumn<bool> _visible;
+		Gtk::TreeModelColumn<std::string> _name;
+		Gtk::TreeModelColumn<std::vector<Member>::iterator> _iterator;
+	};
+
+	void toggle (std::vector<Member>::iterator);
+	void list_view_visible_changed (std::string const &);
+	void update_list_view ();
+	bool should_actually_be_visible (Member const &) const;
+
+	std::vector<Member> _members;
+	std::string _xml_property_name;
+	ModelColumns _model_columns;
+	Glib::RefPtr<Gtk::ListStore> _model;
+	bool _ignore_list_view_change;
+};
+
+#endif

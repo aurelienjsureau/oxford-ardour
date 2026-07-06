@@ -1,0 +1,124 @@
+/*
+ * Copyright (C) 2006-2015 David Robillard <d@drobilla.net>
+ * Copyright (C) 2007-2017 Paul Davis <paul@linuxaudiosystems.com>
+ * Copyright (C) 2008-2009 Hans Baier <hansfbaier@googlemail.com>
+ * Copyright (C) 2009-2012 Carl Hetherington <carl@carlh.net>
+ * Copyright (C) 2015-2019 Robin Gareus <robin@gareus.org>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
+
+#pragma once
+
+#include <cstdio>
+#include <time.h>
+#include "evoral/SMF.h"
+#include "ardour/midi_source.h"
+#include "ardour/file_source.h"
+
+namespace Evoral { template<typename T> class Event; }
+
+namespace ARDOUR {
+
+template<typename T> class MidiRingBuffer;
+
+/** Standard Midi File (Type 0) Source */
+class LIBARDOUR_API SMFSource : public MidiSource, public FileSource, public Evoral::SMF {
+public:
+	/** Constructor for new internal-to-session files */
+	SMFSource (Session& session, const std::string& path, Source::Flag flags);
+
+	/** Constructor for existing external-to-session files */
+	SMFSource (Session& session, const std::string& path);
+
+	/** Constructor for existing in-session files */
+	SMFSource (Session& session, const XMLNode&, bool must_exist = false);
+
+	virtual ~SMFSource ();
+
+	bool safe_file_extension (const std::string& path) const {
+		return safe_midi_file_extension(path);
+	}
+
+	void _append_event_beats (const WriterLock& lock, const Evoral::Event<Temporal::Beats>& ev, bool allow_meta);
+	void append_event_samples (const WriterLock& lock, const Evoral::Event<samplepos_t>& ev, samplepos_t source_start);
+
+	void round_length_to_bars (int pulses);
+	void update_length (timepos_t const & dur);
+
+	void mark_streaming_midi_write_started (const WriterLock& lock, NoteMode mode);
+
+	void mark_streaming_write_completed (const WriterLock& lock, Temporal::timecnt_t const & duration);
+	void mark_midi_streaming_write_completed (const WriterLock& lock,
+	                                          Evoral::Sequence<Temporal::Beats>::StuckNoteOption,
+	                                          Temporal::timecnt_t const & duration);
+	void end_track (const WriterLock&);
+
+	XMLNode& get_state () const;
+	int set_state (const XMLNode&, int version);
+
+	void load_model (const WriterLock& lock, bool force_reload=false);
+	void destroy_model (const WriterLock& lock);
+
+	static bool safe_midi_file_extension (const std::string& path);
+	static bool valid_midi_file (const std::string& path);
+
+	void prevent_deletion ();
+	void set_path (const std::string& newpath);
+
+	/** Query the smf file for its channel info */
+	SMF::UsedChannels used_midi_channels();
+
+	void render (const ReaderLock& lock, Evoral::EventSink<Temporal::Beats>& dst);
+
+	Temporal::Beats duration() const;
+
+  protected:
+	void close ();
+	void flush_midi (const WriterLock& lock);
+
+  private:
+	bool _open;
+	Temporal::Beats   _last_ev_time_beats;
+	samplepos_t       _last_ev_time_samples;
+	/** end time (start + duration) of last call to read_unlocked */
+	mutable timepos_t _smf_last_read_end;
+	/** time (in SMF ticks, 1 tick per _ppqn) of the last event read by read_unlocked */
+	mutable timepos_t _smf_last_read_time;
+
+	int open_for_write ();
+
+	void ensure_disk_file (const WriterLock& lock);
+
+	timecnt_t read_unlocked (const ReaderLock&               lock,
+	                         Evoral::EventSink<samplepos_t>& dst,
+	                         timepos_t const &               position,
+	                         timepos_t const &               start,
+	                         timecnt_t const &               cnt,
+	                         Temporal::Range*                loop_range,
+	                         MidiNoteTracker*               tracker,
+	                         MidiChannelFilter*              filter) const;
+
+	timecnt_t write_unlocked (const WriterLock&            lock,
+	                          MidiRingBuffer<samplepos_t>& src,
+	                          timepos_t const &            position,
+	                          timecnt_t const &            cnt);
+
+	void load_model_unlocked (bool force_reload=false);
+
+};
+
+}; /* namespace ARDOUR */
+

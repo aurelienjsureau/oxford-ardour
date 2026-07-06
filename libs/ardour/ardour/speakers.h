@@ -1,0 +1,66 @@
+/*
+ * Copyright (C) 2010-2011 David Robillard <d@drobilla.net>
+ * Copyright (C) 2010-2013 Paul Davis <paul@linuxaudiosystems.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
+
+#pragma once
+
+#include <vector>
+#include <iostream>
+
+#include <pbd/signals.h>
+#include <pbd/stateful.h>
+
+#include "ardour/speaker.h"
+
+class XMLNode;
+
+namespace ARDOUR  {
+
+class LIBARDOUR_API Speakers : public PBD::Stateful {
+public:
+	Speakers ();
+	Speakers (const Speakers&);
+	virtual ~Speakers ();
+
+	Speakers& operator= (const Speakers&);
+
+	virtual int  add_speaker (const PBD::AngularVector&);
+	virtual void remove_speaker (int id);
+	virtual void move_speaker (int id, const PBD::AngularVector& new_position);
+	virtual void clear_speakers ();
+	uint32_t size() const { return _speakers.size(); }
+
+	void setup_default_speakers (uint32_t nspeakers);
+
+	std::vector<Speaker>& speakers() { return _speakers; }
+
+	void dump_speakers (std::ostream&);
+
+	XMLNode& get_state () const;
+	int set_state (const XMLNode&, int version);
+
+	PBD::Signal<void()> Changed;
+
+protected:
+	std::vector<Speaker>  _speakers;
+
+	virtual void update () {}
+};
+
+} /* namespace */
+

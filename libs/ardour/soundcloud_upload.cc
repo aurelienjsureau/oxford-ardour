@@ -1,0 +1,331 @@
+/*
+ * Copyright (C) 2013-2014 Colin Fletcher <colin.m.fletcher@googlemail.com>
+ * Copyright (C) 2015-2016 Paul Davis <paul@linuxaudiosystems.com>
+ * Copyright (C) 2015-2017 Robin Gareus <robin@gareus.org>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
+
+#if defined(COMPILER_MSVC) && defined(WAF_BUILD)
+#include <winsock2.h>
+#endif
+
+#include "ardour/debug.h"
+#include "ardour/soundcloud_upload.h"
+
+#include "pbd/xml++.h"
+#include <pbd/error.h>
+
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <iostream>
+
+#include "pbd/ccurl.h"
+#include "pbd/gstdio_compat.h"
+
+#include "pbd/i18n.h"
+
+using namespace PBD;
+
+static size_t
+WriteMemoryCallback(void *ptr, size_t size, size_t nmemb, void *data)
+{
+	size_t realsize = (size * nmemb);
+	struct MemoryStruct *mem = (struct MemoryStruct *)data;
+
+	mem->memory = (char *)realloc(mem->memory, mem->size + realsize + 1);
+
+	if (mem->memory) {
+		memcpy(&(mem->memory[mem->size]), ptr, realsize);
+		mem->size += realsize;
+		mem->memory[mem->size] = 0;
+	}
+	return realsize;
+}
+
+SoundcloudUploader::SoundcloudUploader()
+: errorBuffer()
+, caller(0)
+{
+	curl_handle = curl_easy_init();
+	multi_handle = curl_multi_init();
+	PBD::CCurl::ca_setopt (curl_handle);
+}
+
+std::string
+SoundcloudUploader::Get_Auth_Token( std::string username, std::string password )
+{
+	struct MemoryStruct xml_page;
+	xml_page.memory = NULL;
+	xml_page.size = 0;
+
+	setcUrlOptions();
+
+	curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
+	curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *) &xml_page);
+
+	curl_mime *mime = curl_mime_init(curl_handle);
+	curl_mimepart* part;
+
+	part = curl_mime_addpart (mime);
+	curl_mime_name (part, "client_id");
+	curl_mime_data (part, "6dd9cf0ad281aa57e07745082cec580b", CURL_ZERO_TERMINATED);
+	part = curl_mime_addpart (mime);
+	curl_mime_name (part, "client_secret");
+	curl_mime_data (part, "53f5b0113fb338800f8a7a9904fc3569", CURL_ZERO_TERMINATED);
+	part = curl_mime_addpart (mime);
+	curl_mime_name (part, "grant_type");
+	curl_mime_data (part, "password", CURL_ZERO_TERMINATED);
+	part = curl_mime_addpart (mime);
+	curl_mime_name (part, "username");
+	curl_mime_data (part, username.c_str(), CURL_ZERO_TERMINATED);
+	part = curl_mime_addpart (mime);
+	curl_mime_name (part, "password");
+	curl_mime_data (part, password.c_str(), CURL_ZERO_TERMINATED);
+
+
+	struct curl_slist *headerlist=NULL;
+	headerlist = curl_slist_append(headerlist, "Expect:");
+	headerlist = curl_slist_append(headerlist, "Accept: application/xml");
+	curl_easy_setopt(curl_handle, CURLOPT_HTTPHEADER, headerlist);
+
+	/* what URL that receives this POST */
+	std::string url = "https://api.soundcloud.com/oauth2/token";
+	curl_easy_setopt(curl_handle, CURLOPT_URL, url.c_str());
+	curl_easy_setopt(curl_handle, CURLOPT_MIMEPOST, mime);
+
+	// curl_easy_setopt(curl_handle, CURLOPT_VERBOSE, 1L);
+
+	// perform online request
+	CURLcode res = curl_easy_perform(curl_handle);
+
+	curl_mime_free (mime);
+
+	if (res != 0) {
+		DEBUG_TRACE (DEBUG::Soundcloud, string_compose ("curl error %1 (%2)\n", res, curl_easy_strerror(res) ) );
+		return "";
+	}
+
+	if (xml_page.memory){
+		// cheesy way to parse the json return value.  find access_token, then advance 3 quotes
+
+		if ( strstr ( xml_page.memory , "access_token" ) == NULL) {
+			error << _("Upload to Soundcloud failed.  Perhaps your email or password are incorrect?\n") << endmsg;
+			return "";
+		}
+
+		std::string token = strtok( xml_page.memory, "access_token" );
+		token = strtok( NULL, "\"" );
+		token = strtok( NULL, "\"" );
+		token = strtok( NULL, "\"" );
+
+		free( xml_page.memory );
+		return token;
+	}
+
+	return "";
+}
+
+int
+SoundcloudUploader::progress_callback(void *caller, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow)
+{
+	SoundcloudUploader *scu = (SoundcloudUploader *) caller;
+	DEBUG_TRACE (DEBUG::Soundcloud, string_compose ("%1: uploaded %2 of %3\n", scu->title, ulnow, ultotal) );
+	scu->caller->SoundcloudProgress(ultotal, ulnow, scu->title); /* EMIT SIGNAL */
+	return 0;
+}
+
+
+std::string
+SoundcloudUploader::Upload(std::string file_path, std::string title, std::string token, bool ispublic, bool downloadable, ARDOUR::ExportHandler *caller)
+{
+	int still_running;
+
+	struct MemoryStruct xml_page;
+	xml_page.memory = NULL;
+	xml_page.size = 0;
+
+	setcUrlOptions();
+
+	curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
+	curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *) &xml_page);
+
+	curl_mime *mime = curl_mime_init(curl_handle);
+	curl_mimepart* part;
+
+	part = curl_mime_addpart (mime);
+	curl_mime_name (part, "track[asset_data]");
+	curl_mime_filedata (part, file_path.c_str());
+
+	part = curl_mime_addpart (mime);
+	curl_mime_name (part, "oauth_token");
+	curl_mime_data (part, token.c_str(), CURL_ZERO_TERMINATED);
+
+	part = curl_mime_addpart (mime);
+	curl_mime_name (part, "track[title]");
+	curl_mime_data (part, title.c_str(), CURL_ZERO_TERMINATED);
+
+	part = curl_mime_addpart (mime);
+	curl_mime_name (part, "track[sharing]");
+	curl_mime_data (part, ispublic ? "public" : "private", CURL_ZERO_TERMINATED);
+
+	part = curl_mime_addpart (mime);
+	curl_mime_name (part, "track[downloadable]");
+	curl_mime_data (part, downloadable ? "true" : "false", CURL_ZERO_TERMINATED);
+
+
+	/* initalize custom header list (stating that Expect: 100-continue is not
+	   wanted */
+	struct curl_slist *headerlist=NULL;
+	static const char buf[] = "Expect:";
+	headerlist = curl_slist_append(headerlist, buf);
+
+
+	if (curl_handle && multi_handle) {
+
+		/* what URL that receives this POST */
+		std::string url = "https://api.soundcloud.com/tracks";
+		curl_easy_setopt(curl_handle, CURLOPT_URL, url.c_str());
+		// curl_easy_setopt(curl_handle, CURLOPT_VERBOSE, 1L);
+
+		curl_easy_setopt(curl_handle, CURLOPT_HTTPHEADER, headerlist);
+		curl_easy_setopt(curl_handle, CURLOPT_MIMEPOST, mime);
+
+		this->title = title; // save title to show in progress bar
+		this->caller = caller;
+
+		curl_easy_setopt (curl_handle, CURLOPT_NOPROGRESS, 0); // turn on the progress bar
+		curl_easy_setopt (curl_handle, CURLOPT_XFERINFOFUNCTION, &SoundcloudUploader::progress_callback);
+		curl_easy_setopt (curl_handle, CURLOPT_XFERINFODATA, this);
+
+		curl_multi_add_handle(multi_handle, curl_handle);
+
+		curl_multi_perform(multi_handle, &still_running);
+
+
+		while(still_running) {
+			struct timeval timeout;
+			int rc; /* select() return code */
+
+			fd_set fdread;
+			fd_set fdwrite;
+			fd_set fdexcep;
+			int maxfd = -1;
+
+			long curl_timeo = -1;
+
+			FD_ZERO(&fdread);
+			FD_ZERO(&fdwrite);
+			FD_ZERO(&fdexcep);
+
+			/* set a suitable timeout to play around with */
+			timeout.tv_sec = 1;
+			timeout.tv_usec = 0;
+
+			curl_multi_timeout(multi_handle, &curl_timeo);
+			if(curl_timeo >= 0) {
+				timeout.tv_sec = curl_timeo / 1000;
+				if(timeout.tv_sec > 1)
+					timeout.tv_sec = 1;
+				else
+					timeout.tv_usec = (curl_timeo % 1000) * 1000;
+			}
+
+			/* get file descriptors from the transfers */
+			curl_multi_fdset(multi_handle, &fdread, &fdwrite, &fdexcep, &maxfd);
+
+			/* In a real-world program you OF COURSE check the return code of the
+			   function calls.  On success, the value of maxfd is guaranteed to be
+			   greater or equal than -1.  We call select(maxfd + 1, ...), specially in
+			   case of (maxfd == -1), we call select(0, ...), which is basically equal
+			   to sleep. */
+
+			rc = select(maxfd+1, &fdread, &fdwrite, &fdexcep, &timeout);
+
+			switch(rc) {
+				case -1:
+					/* select error */
+					break;
+				case 0:
+				default:
+					/* timeout or readable/writable sockets */
+					curl_multi_perform(multi_handle, &still_running);
+					break;
+			}
+		}
+
+		curl_mime_free (mime);
+
+		/* free slist */
+		curl_slist_free_all (headerlist);
+	}
+
+	curl_easy_setopt (curl_handle, CURLOPT_NOPROGRESS, 1); // turn off the progress bar
+
+	if(xml_page.memory){
+
+		DEBUG_TRACE (DEBUG::Soundcloud, xml_page.memory);
+
+		XMLTree doc;
+		doc.read_buffer( xml_page.memory );
+		XMLNode *root = doc.root();
+
+		if (!root) {
+			DEBUG_TRACE (DEBUG::Soundcloud, "no root XML node!\n");
+			return "";
+		}
+
+		XMLNode *url_node = root->child("permalink-url");
+		if (!url_node) {
+			DEBUG_TRACE (DEBUG::Soundcloud, "no child node \"permalink-url\" found!\n");
+			return "";
+		}
+
+		XMLNode *text_node = url_node->child("text");
+		if (!text_node) {
+			DEBUG_TRACE (DEBUG::Soundcloud, "no text node found!\n");
+			return "";
+		}
+
+		free( xml_page.memory );
+		return text_node->content();
+	}
+
+	return "";
+};
+
+
+SoundcloudUploader:: ~SoundcloudUploader()
+{
+	curl_easy_cleanup(curl_handle);
+	curl_multi_cleanup(multi_handle);
+}
+
+
+void
+SoundcloudUploader::setcUrlOptions()
+{
+	// some servers don't like requests that are made without a user-agent field, so we provide one
+	curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
+	// setup curl error buffer
+	curl_easy_setopt(curl_handle, CURLOPT_ERRORBUFFER, errorBuffer);
+	// Allow redirection
+	curl_easy_setopt(curl_handle, CURLOPT_FOLLOWLOCATION, 1);
+
+	// Allow connections to time out (without using signals)
+	curl_easy_setopt(curl_handle, CURLOPT_NOSIGNAL, 1);
+	curl_easy_setopt(curl_handle, CURLOPT_CONNECTTIMEOUT, 30);
+}
+

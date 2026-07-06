@@ -1,0 +1,38 @@
+#!/usr/bin/env python
+
+# Version of this package (even if built as a child)
+LIBPTFORMAT_VERSION = '0.0.0'
+
+# Library version (UNIX style major, minor, micro)
+# major increment <=> incompatible changes
+# minor increment <=> compatible changes (additions)
+# micro increment <=> no interface changes
+LIBPTFORMAT_LIB_VERSION = '0.0.0'
+
+I18N_PACKAGE = 'libptformat'
+
+def options(opt):
+    pass
+
+def configure(conf):
+    pass
+
+def build(bld):
+    # Library
+    if bld.is_defined ('INTERNAL_SHARED_LIBS'):
+        obj = bld.shlib (features = 'cxx cxxshlib', source = [ 'ptformat.cc' ])
+        obj.defines = [ 'LIBPTFORMAT_DLL_EXPORTS=1' ]
+    else:
+        obj = bld.stdlib (source = [ 'ptformat.cc' ])
+        obj.cxxflags = [ bld.env['compiler_flags_dict']['pic'] ]
+        obj.cflags   = [ bld.env['compiler_flags_dict']['pic'] ]
+
+    obj.export_includes     = ['.']
+    obj.includes     = ['.']
+    obj.name         = 'libptformat'
+    obj.target       = 'ptformat'
+    obj.use          = 'libpbd'
+    obj.uselib       = 'GLIBMM'
+    obj.vnum         = LIBPTFORMAT_LIB_VERSION
+    obj.install_path = bld.env['LIBDIR']
+    obj.defines     += [ 'PACKAGE="' + I18N_PACKAGE + '"' ]

@@ -1,0 +1,49 @@
+#!/usr/bin/env python
+from waflib.extras import autowaf as autowaf
+
+# Version of this package (even if built as a child)
+MAJOR = '0'
+MINOR = '0'
+MICRO = '0'
+WAVEVIEW_VERSION = "%s.%s.%s" % (MAJOR, MINOR, MICRO)
+
+# Library version (UNIX style major, minor, micro)
+# major increment <=> incompatible changes
+# minor increment <=> compatible changes (additions)
+# micro increment <=> no interface changes
+WAVEVIEW_LIB_VERSION = '0.0.0'
+
+I18N_PACKAGE = 'libwaveview'
+
+waveview_sources = [
+        'debug.cc',
+        'wave_view.cc',
+        'wave_view_private.cc',
+]
+
+def options(opt):
+    pass
+
+def configure(conf):
+    autowaf.check_pkg(conf, 'cairomm-1.0', uselib_store='CAIROMM', atleast_version='1.8.4')
+
+def build(bld):
+    # Library
+    if bld.is_defined ('INTERNAL_SHARED_LIBS'):
+        obj = bld.shlib(features = 'cxx cxxshlib', source=waveview_sources)
+        obj.defines      = [ 'LIBWAVEVIEW_DLL_EXPORTS=1' ]
+    else:
+        obj = bld.stlib(features = 'cxx cxxstlib', source=waveview_sources)
+        obj.cxxflags = [ bld.env['compiler_flags_dict']['pic'] ]
+        obj.cflags   = [ bld.env['compiler_flags_dict']['pic'] ]
+        obj.defines      = [ ]
+
+    obj.export_includes = ['.']
+    obj.includes     = ['.']
+    obj.uselib       = 'SIGCPP PANGOMM CAIROMM BOOST XML TEMPORAL GLIBMM GIOMM'
+    obj.use          = [ 'libpbd', 'libcanvas', 'libardour', 'libgtkmm2ext', 'libtemporal', 'libytkmm' ]
+    obj.name         = 'libwaveview'
+    obj.target       = 'waveview'
+    obj.vnum         = WAVEVIEW_LIB_VERSION
+    obj.install_path = bld.env['LIBDIR']
+    obj.defines      += [ 'PACKAGE="' + I18N_PACKAGE + '"' ]

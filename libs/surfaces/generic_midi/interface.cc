@@ -1,0 +1,77 @@
+/*
+ * Copyright (C) 2006-2009 David Robillard <d@drobilla.net>
+ * Copyright (C) 2006-2015 Paul Davis <paul@linuxaudiosystems.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
+
+#include <pbd/failed_constructor.h>
+
+#include "control_protocol/control_protocol.h"
+#include "generic_midi_control_protocol.h"
+
+using namespace ARDOUR;
+
+static ControlProtocol*
+new_generic_midi_protocol (Session* s, std::string const & config)
+{
+	GenericMidiControlProtocol* gmcp;
+
+	if (config.empty()) {
+		/* Generic MIDI requires a device name */
+		return nullptr;
+	}
+
+	try {
+		gmcp =  new GenericMidiControlProtocol (*s, config);
+	} catch (failed_constructor& err) {
+		return 0;
+	}
+
+	if (gmcp->set_active (true)) {
+		delete gmcp;
+		return 0;
+	}
+
+	return gmcp;
+}
+
+static void
+delete_generic_midi_protocol (ControlProtocol* cp)
+{
+	delete cp;
+}
+
+static std::map<std::string, std::vector<std::string>>
+enumerate_generic_midi_protocol ()
+{
+	return GenericMidiControlProtocol::enumerate();
+}
+
+// Field names commented out by JE - 06-01-2010
+static ControlProtocolDescriptor generic_midi_descriptor = {
+	/* name       */ "Generic MIDI",
+	/* id         */ "uri://ardour.org/surfaces/generic_midi:0",
+	/* module     */ 0,
+	/* available  */ 0,
+	/* probe_port */ 0,
+	/* match usb  */ 0,
+	/* initialize */ new_generic_midi_protocol,
+	/* destroy    */ delete_generic_midi_protocol,
+	/* enumerate  */ enumerate_generic_midi_protocol,
+};
+
+extern "C" ARDOURSURFACE_API ControlProtocolDescriptor* protocol_descriptor () { return &generic_midi_descriptor; }
+

@@ -1,0 +1,192 @@
+/*
+ * Copyright (C) 2006-2014 David Robillard <d@drobilla.net>
+ * Copyright (C) 2006-2017 Paul Davis <paul@linuxaudiosystems.com>
+ * Copyright (C) 2009-2012 Carl Hetherington <carl@carlh.net>
+ * Copyright (C) 2016-2019 Robin Gareus <robin@gareus.org>
+ * Copyright (C) 2018-2019 Ben Loftis <ben@harrisonconsoles.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
+
+#pragma once
+
+#include <atomic>
+#include <memory>
+#include <string>
+
+#include "pbd/mutex.h"
+#include "pbd/rwlock.h"
+#include "pbd/statefuldestructible.h"
+
+#include "ardour/ardour.h"
+#include "ardour/scale_provider.h"
+#include "ardour/session_object.h"
+#include "ardour/data_type.h"
+#include "ardour/segment_descriptor.h"
+
+namespace ARDOUR {
+
+class Session;
+
+class LIBARDOUR_API Source : public SessionObject,
+                             public std::enable_shared_from_this<ARDOUR::Source>,
+                             public ScaleProvider
+{
+public:
+	enum Flag {
+		Writable = 0x1,
+		CanRename = 0x2,
+		Broadcast = 0x4,
+		Removable = 0x8,
+		RemovableIfEmpty = 0x10,
+		RemoveAtDestroy = 0x20,
+		NoPeakFile = 0x40,
+		/* No longer in use but kept to allow loading of older sessions */
+		Destructive = 0x80,
+		Empty = 0x100, /* used for MIDI only */
+		RF64_RIFF = 0x200,
+		Missing = 0x400, /* used for MIDI only */
+	};
+
+	typedef PBD::RWLock::ReaderLock ReaderLock;
+	typedef PBD::RWLock::WriterLock WriterLock;
+
+	Source (Session&, DataType type, const std::string& name, Flag flags=Flag(0));
+	Source (Session&, const XMLNode&);
+
+	virtual ~Source ();
+
+	DataType type() { return _type; }
+
+	time_t timestamp() const { return _timestamp; }
+	void stamp (time_t when) { _timestamp = when; }
+
+	virtual timepos_t length() const { return _length; }
+
+	virtual bool        empty () const;
+	virtual void        update_length (timepos_t const & dur) {}
+
+	void                 set_take_id (std::string id) { _take_id =id; }
+	const std::string&   take_id ()        const { return _take_id; }
+
+	void mark_for_remove();
+
+	virtual void mark_streaming_write_started (const WriterLock& lock) {}
+	/* The duration argument is ignored for audio data, where length is
+	   implicitly given by the sample data. It matters for MIDI data, where
+	   the file may be intended to be N bars long, but has no events that
+	   occur at that duration.
+	*/
+	virtual void mark_streaming_write_completed (const WriterLock& lock, Temporal::timecnt_t const & duration) = 0;
+
+	virtual void session_saved() {}
+
+	XMLNode& get_state () const;
+	int set_state (XMLNode const &, int version);
+
+	bool         writable () const;
+
+	virtual bool length_mutable() const    { return false; }
+
+	static PBD::Signal<void(Source*)>             SourceCreated;
+
+	bool has_been_analysed() const;
+	virtual bool can_be_analysed() const { return false; }
+	virtual void set_been_analysed (bool yn);
+	virtual bool check_for_analysis_data_on_disk();
+
+	PBD::Signal<void()> AnalysisChanged;
+
+	AnalysisFeatureList transients;
+	std::string get_transients_path() const;
+	int load_transients (const std::string&);
+
+	size_t n_captured_xruns () const { return _xruns.size (); }
+	XrunPositions const& captured_xruns () const { return _xruns; }
+	void set_captured_xruns (XrunPositions const& xruns) { _xruns = xruns; }
+	void set_captured_marks (CueMarkers const& marks);
+
+	CueMarkers const & cue_markers() const { return _cue_markers; }
+	bool add_cue_marker (CueMarker const &);
+	bool move_cue_marker (CueMarker const &, timepos_t const & source_relative_position);
+	bool remove_cue_marker (CueMarker const &);
+	bool rename_cue_marker (CueMarker&, std::string const &);
+	bool clear_cue_markers ();
+	PBD::Signal<void()> CueMarkersChanged;
+
+	virtual timepos_t natural_position() const { return _natural_position; }
+	virtual void set_natural_position (timepos_t const & pos);
+
+	bool have_natural_position() const { return _have_natural_position; }
+
+	/* This method is only for use during a capture pass. It makes no sense
+	 * in any other context.
+	 */
+	timecnt_t time_since_capture_start (timepos_t const & pos);
+
+	void set_allow_remove_if_empty (bool yn);
+
+	PBD::RWLock& mutex() { return _lock; }
+	Flag flags() const { return _flags; }
+
+	virtual void inc_use_count ();
+	virtual void dec_use_count ();
+	int  use_count() const { return _use_count.load(); }
+	bool used() const { return use_count() > 0; }
+
+	uint32_t level() const { return _level; }
+
+	std::string ancestor_name() { return _ancestor_name.empty() ? name() : _ancestor_name; }
+	void set_ancestor_name(const std::string& name) { _ancestor_name = name; }
+
+	void set_captured_for (std::string str) { _captured_for = str; }
+	std::string captured_for() const { return _captured_for; }
+
+	bool get_segment_descriptor (TimelineRange const &, SegmentDescriptor&);
+	int set_segment_descriptor (SegmentDescriptor const &, bool replace = false);
+
+	void copy_segment_descriptors (Source const & other);
+
+  protected:
+	DataType            _type;
+	Flag                _flags;
+	time_t              _timestamp;
+	std::string         _take_id;
+	timepos_t           _natural_position;
+	bool                _have_natural_position;
+	bool                _analysed;
+	std::atomic<int>    _use_count;
+	uint32_t            _level; /* how deeply nested is this source w.r.t a disk file */
+	std::string         _ancestor_name;
+	std::string        _captured_for;
+	timepos_t          _length;
+	XrunPositions      _xruns;
+	CueMarkers         _cue_markers;
+
+	typedef std::vector<SegmentDescriptor> SegmentDescriptors;
+	SegmentDescriptors segment_descriptors;
+
+	mutable PBD::RWLock _lock;
+	mutable PBD::Mutex _analysis_lock;
+
+  private:
+	void fix_writable_flags ();
+
+	XMLNode& get_cue_state () const;
+	int set_cue_state (XMLNode const &, int);
+};
+
+}
+

@@ -1,0 +1,95 @@
+/*
+ * Copyright (C) 2010-2012 Paul Davis <paul@linuxaudiosystems.com>
+ * Copyright (C) 2011-2012 David Robillard <d@drobilla.net>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
+
+#include <sigc++/bind.h>
+#include <glibmm/main.h>
+
+#include "ardour/midi_track.h"
+#include "ardour/session.h"
+
+#include "note_player.h"
+
+using namespace ARDOUR;
+using namespace std;
+
+NotePlayer::NotePlayer (std::shared_ptr<MidiTrack> mt)
+	: track (mt)
+{
+}
+
+NotePlayer::~NotePlayer ()
+{
+}
+
+void
+NotePlayer::add (std::shared_ptr<NoteType> note)
+{
+	/* Must not be called once play() has been called */
+	notes.push_back (note);
+}
+
+void
+NotePlayer::on ()
+{
+	MidiChannelFilter& filter = track->playback_filter ();
+	for (auto const& n : notes) {
+		Evoral::Event ev (n->on_event(), true);
+		if (!filter.filter(ev.buffer(), ev.size())) {
+			track->write_immediate_event (Evoral::MIDI_EVENT, ev.size(), ev.buffer());
+		}
+	}
+}
+
+void
+NotePlayer::play ()
+{
+	if (track->session().transport_rolling ()) {
+		Glib::signal_idle().connect_once ([this]() { delete this;});
+		return;
+	}
+
+	on ();
+
+	/* note: if there is more than 1 note, we will silence them all at the same time */
+
+	const uint32_t note_length_ms = 100;
+
+	Glib::signal_timeout().connect (sigc::bind (sigc::ptr_fun (&NotePlayer::_off), this),
+					note_length_ms, G_PRIORITY_DEFAULT);
+}
+
+bool
+NotePlayer::_off (NotePlayer* np)
+{
+	np->off ();
+	delete np;
+	return false;
+}
+
+void
+NotePlayer::off ()
+{
+	MidiChannelFilter& filter = track->playback_filter ();
+	for (auto const& n : notes) {
+		Evoral::Event ev (n->off_event(), true);
+		if (!filter.filter(ev.buffer(), ev.size())) {
+			track->write_immediate_event (Evoral::MIDI_EVENT, ev.size(), ev.buffer());
+		}
+	}
+}

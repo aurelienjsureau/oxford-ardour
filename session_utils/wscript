@@ -1,0 +1,95 @@
+#!/usr/bin/env python
+from waflib.extras import autowaf as autowaf
+import waflib.Utils as Utils
+import os
+import sys
+
+def options(opt):
+    pass
+
+def configure(conf):
+    if not "dummy" in conf.env['BACKENDS']:
+        print ('session-utils depend on the dummy backend.')
+        autowaf.display_msg(conf, 'build session-utils', 'no')
+        return
+
+    autowaf.display_msg(conf, 'build session-utils', 'yes')
+
+def build_ardour_util(bld, util):
+    pgmprefix = bld.env['PROGRAM_NAME'].lower() + bld.env['MAJOR']
+
+    # just the normal executable version of the GTK GUI
+    obj = bld (features = 'cxx c cxxprogram')
+    # this program does not do the whole hidden symbols thing
+    if bld.env['build_target'] != 'msvc':
+        obj.cxxflags = [ '-fvisibility=default' ]
+    obj.source   = ['common.cc', util + '.cc' ]
+    obj.target   = pgmprefix + '-' + util
+    obj.includes = ['.']
+    obj.linkflags= [ bld.env['compiler_flags_dict']['execstack'] ]
+    obj.use      = [ 'libpbd',
+                     'libardour',
+                     'libardour_cp',
+                     'libtemporal',
+                     'libmidipp',
+                     'libsuil',
+                     ]
+    obj.defines = [
+        'VERSIONSTRING="' + bld.env['VERSION'] + '"',
+        'UTILNAME="'   + str(pgmprefix + '-' + util) + '"',
+        'DATA_DIR="'   + autowaf.normpath(bld.env['DATADIR']) + '"',
+        'CONFIG_DIR="' + autowaf.normpath(bld.env['SYSCONFDIR']) + '"',
+        'LOCALEDIR="'  + os.path.join(autowaf.normpath(bld.env['DATADIR']), 'locale') + '"',
+        'PACKAGE="'    + "ARDOURUTILS" + '"',
+        ]
+    obj.install_path = bld.env['LIBDIR'] + '/utils'
+    obj.uselib       = 'UUID FLAC FONTCONFIG GLIBMM GIOMM GTHREAD OGG CURL DL XML'
+    obj.uselib       += ' AUDIOUNITS OSX LO '
+    obj.uselib       += ' FFTW3F LO TAGLIB LILV RUBBERBAND AUBIO LRDF ARCHIVE VAMPSDK VAMPHOSTSDK'
+
+    if bld.is_defined('HAVE_USB'):
+        obj.uselib += ' USB'
+
+    if sys.platform == 'darwin':
+        obj.uselib += ' AUDIOUNITS OSX'
+        obj.use    += ' libappleutility'
+    elif bld.env['build_target'] == 'mingw' or bld.env['build_target'] == 'msvc':
+        obj.linkflags += bld.env['compiler_flags_dict']['mconsole']
+
+        if bld.env['build_target'] == 'msvc':
+            obj.lib = ['getopt']
+
+    obj.includes += ['../libs']
+
+    if bld.env['build_target'] == 'mingw' or bld.env['build_target'] == 'msvc':
+        obj.install_path = bld.env['BINDIR']
+
+    if bld.is_defined('NEED_INTL'):
+        obj.linkflags.append ('-lintl')
+
+def build(bld):
+    # session-utils depend on the dummy backend
+    if not "dummy" in bld.env['BACKENDS']:
+        return
+
+    pgmprefix = bld.env['PROGRAM_NAME'].lower() + bld.env['MAJOR']
+
+    utils = bld.path.ant_glob('[a-z]*.cc', excl=['example.cc', 'common.cc'])
+
+    for util in utils:
+        fn = os.path.splitext(os.path.basename(str(util)))[0]
+        build_ardour_util(bld, fn)
+        if bld.env['build_target'] != 'mingw' and bld.env['build_target'] != 'msvc':
+            bld.symlink_as(bld.env['BINDIR'] + '/' + pgmprefix + "-" + fn, bld.env['LIBDIR'] + '/utils/ardour-util.sh')
+
+    if bld.env['build_target'] == 'mingw' or bld.env['build_target'] == 'msvc':
+        return
+
+    obj              = bld(features = 'subst')
+    obj.source       = 'ardour-util.sh.in'
+    obj.target       = 'ardour-util.sh'
+    obj.chmod        = Utils.O755
+    obj.install_path = bld.env['LIBDIR']  + '/utils'
+    obj.LIBDIR       = os.path.normpath(bld.env['DLLDIR'])
+    obj.DATADIR      = os.path.normpath(bld.env['DATADIR'])
+    obj.CONFDIR      = os.path.normpath(bld.env['CONFDIR'])

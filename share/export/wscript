@@ -1,0 +1,15 @@
+#!/usr/bin/env python
+
+import os
+
+def configure(conf):
+    pass
+
+def build(bld):
+    presets = bld.path.ant_glob ('*.preset')
+    formats = bld.path.ant_glob ('*.format')
+    bld.install_files (os.path.join(bld.env['DATADIR'], 'export'),
+                      presets + formats)
+
+def options(opt):
+    pass

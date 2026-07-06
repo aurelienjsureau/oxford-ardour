@@ -1,0 +1,172 @@
+/*
+ * Copyright (C) 2011-2012 Carl Hetherington <carl@carlh.net>
+ * Copyright (C) 2014-2017 Robin Gareus <robin@gareus.org>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
+
+#include <ytkmm/ytkmm.h>
+#include "gtkmm2ext/keyboard.h"
+#include "gtkmm2ext/persistent_tooltip.h"
+
+#include "pbd/controllable.h"
+
+#include "panner_interface.h"
+#include "panner_editor.h"
+
+#include "pbd/i18n.h"
+
+using namespace std;
+using namespace Gtk;
+using namespace ARDOUR;
+using namespace Gtkmm2ext;
+
+PannerInterface::PannerInterface (std::shared_ptr<Panner> p)
+	: _panner (p)
+	, _tooltip (this)
+	, _send_mode (false)
+	, _sensitive (true)
+	, _editor (0)
+{
+	set_can_focus ();
+
+	add_events (Gdk::ENTER_NOTIFY_MASK|Gdk::LEAVE_NOTIFY_MASK|
+	            Gdk::KEY_PRESS_MASK|Gdk::KEY_RELEASE_MASK|
+	            Gdk::BUTTON_PRESS_MASK|Gdk::BUTTON_RELEASE_MASK|
+	            Gdk::SCROLL_MASK|
+	            Gdk::POINTER_MOTION_MASK);
+
+}
+
+PannerInterface::~PannerInterface ()
+{
+	delete _editor;
+}
+
+bool
+PannerInterface::on_enter_notify_event (GdkEventCrossing *)
+{
+	grab_focus ();
+	Keyboard::magic_widget_grab_focus ();
+
+	if (!proxy_controllable ().expired ()) {
+		PBD::Controllable::GUIFocusChanged (proxy_controllable ());
+	}
+	return false;
+}
+
+bool
+PannerInterface::on_leave_notify_event (GdkEventCrossing *)
+{
+	Keyboard::magic_widget_drop_focus ();
+	if (!proxy_controllable ().expired ()) {
+		PBD::Controllable::GUIFocusChanged (std::weak_ptr<PBD::Controllable> ());
+	}
+	return false;
+}
+
+bool
+PannerInterface::on_key_release_event (GdkEventKey*)
+{
+	return false;
+}
+
+void
+PannerInterface::value_change ()
+{
+	set_tooltip ();
+	queue_draw ();
+}
+
+bool
+PannerInterface::on_button_press_event (GdkEventButton* ev)
+{
+	if (Gtkmm2ext::Keyboard::is_edit_event (ev)) {
+		edit ();
+		return true;
+	}
+
+	return false;
+}
+
+bool
+PannerInterface::on_button_release_event (GdkEventButton* ev)
+{
+	if (Gtkmm2ext::Keyboard::is_edit_event (ev)) {
+		/* We edited on the press, so claim the release */
+		return true;
+	}
+
+	return false;
+}
+
+void
+PannerInterface::edit ()
+{
+	delete _editor;
+	_editor = editor ();
+	_editor->show ();
+}
+
+void
+PannerInterface::end_edit ()
+{
+	delete _editor;
+	_editor = nullptr;
+}
+
+void
+PannerInterface::set_sensitive (bool onoff) {
+	if (_sensitive != onoff) {
+		_sensitive = onoff;
+		if (!_sensitive) {
+			end_edit ();
+		}
+		queue_draw ();
+	}
+}
+
+void
+PannerInterface::set_send_drawing_mode(bool onoff) {
+	if (_send_mode != onoff) {
+		_send_mode = onoff;
+		queue_draw ();
+	}
+}
+
+PannerPersistentTooltip::PannerPersistentTooltip (Gtk::Widget* w)
+	: PersistentTooltip (w, true)
+	, _dragging (false)
+{
+
+}
+
+void
+PannerPersistentTooltip::target_start_drag ()
+{
+	_dragging = true;
+}
+
+void
+PannerPersistentTooltip::target_stop_drag ()
+{
+	_dragging = false;
+}
+
+bool
+PannerPersistentTooltip::dragging () const
+{
+	return _dragging;
+}

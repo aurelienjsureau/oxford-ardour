@@ -1,0 +1,135 @@
+#ifndef AUDIOGRAPHER_THREADER_H
+#define AUDIOGRAPHER_THREADER_H
+
+#include <atomic>
+#include <vector>
+#include <algorithm>
+
+#include <sigc++/slot.h>
+#include <sigc++/bind.h>
+
+#include "pbd/atomic.h"
+#include "pbd/compose.h"
+#include "pbd/mutex.h"
+#include "pbd/thread_pool.h"
+
+#include "audiographer/visibility.h"
+#include "audiographer/source.h"
+#include "audiographer/sink.h"
+#include "audiographer/exception.h"
+
+namespace AudioGrapher
+{
+
+/// Class that stores exceptions thrown from different threads
+class /*LIBAUDIOGRAPHER_API*/ ThreaderException : public Exception
+{
+  public:
+	template<typename T>
+	ThreaderException (T const & thrower, std::exception const & e)
+		: Exception (thrower, string_compose ("\n\t- Dynamic type: %1\n\t- what(): %2", DebugUtils::demangled_name (e), e.what()))
+	{ }
+};
+
+/// Class for distributing processing across several threads
+template <typename T = DefaultSampleType>
+class /*LIBAUDIOGRAPHER_API*/ Threader : public Source<T>, public Sink<T>
+{
+  private:
+	typedef std::vector<typename Source<T>::SinkPtr> OutputVec;
+
+  public:
+
+	/** Constructor
+	  * \n RT safe
+	  * \param thread_pool a thread pool from which all tasks are scheduled
+	  * \param wait_timeout_milliseconds maximum time allowed for threads to use in processing
+	  */
+	Threader (PBD::ThreadPool& thread_pool, long wait_timeout_milliseconds = 500)
+	  : thread_pool (thread_pool)
+	  , wait_timeout (wait_timeout_milliseconds)
+	{
+		readers.store (0);
+	}
+
+	virtual ~Threader () {}
+
+	/// Adds output \n RT safe
+	void add_output (typename Source<T>::SinkPtr output) { outputs.push_back (output); }
+
+	/// Clears outputs \n RT safe
+	void clear_outputs () { outputs.clear (); }
+
+	/// Removes a specific output \n RT safe
+	void remove_output (typename Source<T>::SinkPtr output) {
+		typename OutputVec::iterator new_end = std::remove(outputs.begin(), outputs.end(), output);
+		outputs.erase (new_end, outputs.end());
+	}
+
+	/// Processes context concurrently by scheduling each output separately to the given thread pool
+	void process (ProcessContext<T> const & c)
+	{
+		wait_mutex.lock();
+
+		exception.reset();
+
+		unsigned int outs = outputs.size();
+		(void) readers.fetch_add (outs);
+		for (unsigned int i = 0; i < outs; ++i) {
+			thread_pool.push (sigc::bind (sigc::mem_fun (this, &Threader::process_output), c, i));
+		}
+
+		wait();
+	}
+
+	using Sink<T>::process;
+
+  private:
+
+	void wait()
+	{
+		while (readers.load () != 0) {
+			wait_cond.wait_for (wait_mutex, std::chrono::milliseconds (wait_timeout));
+		}
+
+		wait_mutex.unlock();
+
+		if (exception) {
+			throw *exception;
+		}
+	}
+
+	void process_output(ProcessContext<T> const & c, unsigned int output)
+	{
+		try {
+			outputs[output]->process (c);
+		} catch (std::exception const & e) {
+			// Only first exception will be passed on
+			exception_mutex.lock();
+			if(!exception) { exception.reset (new ThreaderException (*this, e)); }
+			exception_mutex.unlock();
+		}
+
+		if (PBD::atomic_dec_and_test (readers)) {
+			wait_cond.signal();
+		}
+	}
+
+	OutputVec outputs;
+
+	PBD::ThreadPool& thread_pool;
+
+	PBD::Mutex wait_mutex;
+	PBD::Cond  wait_cond;
+
+	std::atomic<int> readers;
+	long         wait_timeout;
+
+	PBD::Mutex exception_mutex;
+	std::shared_ptr<ThreaderException> exception;
+
+};
+
+} // namespace
+
+#endif //AUDIOGRAPHER_THREADER_H

@@ -1,0 +1,94 @@
+#!/usr/bin/env python
+from waflib.extras import autowaf as autowaf
+from waflib import Options
+
+# Version of this package (even if built as a child)
+LIBSURFACES_VERSION = '4.1.0'
+
+# Library version (UNIX style major, minor, micro)
+# major increment <=> incompatible changes
+# minor increment <=> compatible changes (additions)
+# micro increment <=> no interface changes
+LIBSURFACES_LIB_VERSION = '4.1.0'
+
+children = [
+    'faderport',
+    'faderport8',
+    'cc121',
+    'generic_midi',
+    'mackie',
+    'us2400',
+    'launch_control_xl',
+    'osc',
+    'console1'
+]
+
+def options(opt):
+    pass
+
+def configure(conf):
+    global children
+
+    autowaf.set_recursive()
+
+    if conf.is_defined('HAVE_USB'):
+        children += [ 'push2' ]
+        children += [ 'contourdesign' ]
+        children += [ 'launchpad_pro' ]
+        children += [ 'launchpad_x' ]
+        children += [ 'launchkey_4' ]
+
+    else:
+        print ('You are missing the libusb-1.0 development package needed to compile Push2 and ContourDesign support')
+
+    if conf.is_defined('HAVE_HIDAPI') and Options.options.maschine:
+        children += [ 'maschine2' ]
+        conf.define('BUILD_MASCHINE', 1)
+
+    conf.check_cc (header_name='cwiid.h', define_name='HAVE_CWIID_H',mandatory=False)
+    if conf.is_defined('HAVE_CWIID_H'):
+        conf.check_cc (header_name='bluetooth/bluetooth.h', define_name='HAVE_BLUETOOTH_H',mandatory=False)
+        if conf.is_defined('HAVE_BLUETOOTH_H'):
+            autowaf.check_pkg(conf, 'cwiid', uselib_store='CWIID', atleast_version='0.6.00',mandatory=False)
+            if conf.is_defined ('HAVE_CWIID'):
+                conf.define ('BUILD_WIIMOTE', 1)
+                children += [ 'wiimote' ]
+            else:
+                print('You have the cwiid headers needed to compile wiimote support BUT you are missing the pkg-config file for cwiid')
+        else:
+            print('You are missing the libbluetooth headers needed to compile wiimote support')
+    else:
+        print('You are missing the cwiid headers needed to compile wiimote support')
+
+    autowaf.check_pkg(conf, 'libwebsockets', uselib_store='WEBSOCKETS', atleast_version='2.0.0', mandatory=False)
+    if conf.is_defined('HAVE_WEBSOCKETS'):
+        children += [ 'websockets' ]
+        children += [ 'mcp_http' ]
+
+    for i in children:
+        conf.recurse(i)
+
+def build(bld):
+    bld.recurse('generic_midi')
+    bld.recurse('faderport')
+    bld.recurse('faderport8')
+    bld.recurse('cc121')
+    bld.recurse('mackie')
+    bld.recurse('us2400')
+    bld.recurse('launch_control_xl')
+    bld.recurse('osc')
+    bld.recurse('console1')
+    bld.recurse('launchpad_pro')
+    bld.recurse('launchpad_x')
+    bld.recurse('launchkey_4')
+
+    if bld.is_defined('BUILD_WIIMOTE'):
+        bld.recurse('wiimote')
+    if bld.is_defined('HAVE_USB'):
+        bld.recurse('push2')
+        bld.recurse('contourdesign')
+    if bld.is_defined('BUILD_MASCHINE'):
+        bld.recurse('maschine2')
+    if bld.is_defined ('HAVE_WEBSOCKETS'):
+        bld.recurse('websockets')
+        bld.recurse('mcp_http')

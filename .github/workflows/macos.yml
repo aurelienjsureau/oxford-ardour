@@ -1,0 +1,78 @@
+name: macOS build (arm64)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+env:
+  APPNAME: Oxford
+  HOMEBREW_NO_AUTO_UPDATE: "1"
+  HOMEBREW_NO_INSTALL_CLEANUP: "1"
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies (Homebrew)
+        run: |
+          brew install \
+            boost glib glibmm@2.66 libsigc++@2 cairomm@1.14 pangomm@2.46 \
+            pango cairo fontconfig freetype libpng \
+            libsndfile libsamplerate flac libogg libvorbis \
+            fftw aubio rubberband vamp-plugin-sdk liblrdf \
+            lv2 serd sord sratom lilv \
+            liblo taglib libusb libarchive libxml2 \
+            sound-touch cppunit readline curl
+          which pkg-config || brew install pkgconf
+
+      - name: Configure
+        run: |
+          BP=$(brew --prefix)
+          KEGS="glibmm@2.66 libsigc++@2 cairomm@1.14 pangomm@2.46 libxml2 libarchive curl readline"
+          PKG="$BP/lib/pkgconfig:$BP/share/pkgconfig"
+          INC="-I$BP/include"
+          LIB="-L$BP/lib"
+          for k in $KEGS; do
+            P=$(brew --prefix $k)
+            PKG="$PKG:$P/lib/pkgconfig"
+            INC="$INC -I$P/include"
+            LIB="$LIB -L$P/lib"
+          done
+          export PKG_CONFIG_PATH="$PKG"
+          export CFLAGS="$INC"
+          export CXXFLAGS="$INC"
+          export LDFLAGS="$LIB"
+          python3 ./waf configure \
+            --program-name=$APPNAME \
+            --optimize \
+            --no-nls \
+            --with-backends=coreaudio,dummy
+
+      - name: Build
+        run: python3 ./waf build
+
+      - name: Package (.app + .dmg)
+        run: |
+          cd tools/osx_packaging
+          chmod +x osx_build_ci
+          ./osx_build_ci $APPNAME
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APPNAME }}-macOS-arm64
+          path: tools/osx_packaging/*.dmg
+          if-no-files-found: error
+
+      - name: Upload config log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            build/config.log
+          if-no-files-found: ignore

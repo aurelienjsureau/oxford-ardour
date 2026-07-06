@@ -1,0 +1,336 @@
+#!/bin/bash
+
+# Packaging macOS pour CI (GitHub Actions) — dérivé d'osx_build.
+# Bundle .app + .dmg NON SIGNÉ (signature ad-hoc seulement, requise sur arm64).
+# Dépendances système via Homebrew (/opt/homebrew) au lieu du stack ardour.org.
+# Pas de harvid/xjadeo/x42/Harrison, pas de notarisation, pas de NLS.
+#
+# Usage: ./osx_build_ci <AppName>   (ex: ./osx_build_ci Trident)
+
+set -e
+
+APPNAME=$1
+if test -z "$APPNAME"; then
+	echo "usage: osx_build_ci <AppName>"
+	exit 1
+fi
+lower_case_appname=$(echo "$APPNAME" | tr '[:upper:]' '[:lower:]')
+
+BUILD_ROOT=../../build
+BREW_PREFIX=$(brew --prefix 2>/dev/null || echo /opt/homebrew)
+
+. ../define_versions.sh
+
+echo "Version is $release_version"
+info_string="$release_version built on `hostname` by `whoami` on `date`"
+
+BUNDLENAME=$APPNAME
+PRODUCT_PKG_DIR=$APPNAME
+APPDIR=${BUNDLENAME}.app
+APPROOT=$APPDIR/Contents
+Frameworks=$APPROOT/lib
+Resources=$APPROOT/Resources
+Shared=$Resources
+Etc=$Resources
+
+Surfaces=$Frameworks/surfaces
+Panners=$Frameworks/panners
+Backends=$Frameworks/backends
+MidiMaps=$Shared/midi_maps
+PluginMetadata=$Shared/plugin_metadata
+ExportFormats=$Shared/export
+Templates=$Shared/templates
+LRDFPresets=$Shared/rdf
+PatchFiles=$Shared/patchfiles
+LuaScripts=$Shared/scripts
+MediaClips=$Shared/media
+WebSurfaces=$Shared/web_surfaces
+MackieControl=$Shared/mcp
+OSC=$Shared/osc
+Themes=$Shared/themes
+
+echo "Removing old $APPDIR tree ..."
+rm -rf $APPDIR
+
+echo "Building new app directory structure ..."
+mkdir -p $APPROOT/MacOS
+mkdir -p $APPROOT/Resources
+mkdir -p $Surfaces
+mkdir -p $Panners
+mkdir -p $Backends
+mkdir -p $MidiMaps
+mkdir -p $ExportFormats
+mkdir -p $Etc
+mkdir -p $MackieControl
+mkdir -p $OSC
+mkdir -p $Themes
+mkdir -p $PatchFiles
+mkdir -p $LuaScripts
+
+EXECUTABLE=${BUNDLENAME}
+MAIN_EXECUTABLE=$EXECUTABLE
+
+env=""
+env="$env<key>PATH</key><string>/usr/local/bin:/opt/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>"
+env="$env<key>DYLIB_FALLBACK_LIBRARY_PATH</key><string>/usr/local/lib:/opt/lib</string>"
+env="<key>LSEnvironment</key><dict>$env<key>ARDOUR_BUNDLED</key><string>true</string></dict>"
+
+# Info.plist
+sed -e "s?@ENV@?$env?g" \
+    -e "s?@VERSION@?$release_version?g" \
+    -e "s?@INFOSTRING@?$info_string?g" \
+    -e "s?@IDBASE@?com.bourrinaudio?g" \
+    -e "s?@IDSUFFIX@?$EXECUTABLE?g" \
+    -e "s?@BUNDLENAME@?$BUNDLENAME?g" \
+    -e "s?@EXECUTABLE@?$EXECUTABLE?g" < Info.plist.in > Info.plist
+sed -e "s?@APPNAME@?$APPNAME?" \
+    -e "s?@ENV@?$env?g" \
+    -e "s?@VERSION@?$release_version?g" \
+    -e "s?@INFOSTRING@?$info_string?g" < InfoPlist.strings.in > Resources/InfoPlist.strings
+
+cp Info.plist $APPROOT
+cp -R Resources $APPROOT
+rm -f Info.plist
+rm -f Resources/InfoPlist.strings
+
+echo "Copying executable ...."
+# le target gtk2_ardour peut s'appeler trident-X / oxford-X / ardour-X selon le fork
+EXE_SRC=""
+for cand in trident ardour oxford $lower_case_appname; do
+	if test -f "$BUILD_ROOT/gtk2_ardour/$cand-$release_version"; then
+		EXE_SRC="$BUILD_ROOT/gtk2_ardour/$cand-$release_version"
+		break
+	fi
+done
+if test -z "$EXE_SRC"; then
+	echo "ERROR: executable introuvable dans $BUILD_ROOT/gtk2_ardour/"
+	ls -l $BUILD_ROOT/gtk2_ardour/ || true
+	exit 1
+fi
+cp "$EXE_SRC" $APPROOT/MacOS/$MAIN_EXECUTABLE
+
+echo "Generating icns from ${APPNAME}-icon_512px.png ..."
+ICONSET=$(mktemp -d)/icon.iconset
+mkdir -p "$ICONSET"
+SRCPNG=../../gtk2_ardour/resources/${APPNAME}-icon_512px.png
+for sz in 16 32 128 256 512; do
+	sips -z $sz $sz "$SRCPNG" --out "$ICONSET/icon_${sz}x${sz}.png" >/dev/null
+	dsz=$((sz * 2))
+	if test $dsz -le 512; then
+		sips -z $dsz $dsz "$SRCPNG" --out "$ICONSET/icon_${sz}x${sz}@2x.png" >/dev/null
+	fi
+done
+iconutil -c icns "$ICONSET" -o $Resources/appIcon.icns
+cp typeArdour.icns $Resources/
+
+set +e # à partir d'ici certains fichiers sont optionnels
+
+# GTK engine (clearlooks)
+GTK_ENGINE_DIR=$Frameworks/gtkengines/engines
+mkdir -p $GTK_ENGINE_DIR
+echo "Copying GTK engines ..."
+cp $BUILD_ROOT/libs/clearlooks-newer/libclearlooks.dylib $GTK_ENGINE_DIR/libclearlooks.so
+
+# Surfaces / panners / backends
+cp $BUILD_ROOT/libs/surfaces/*/libardour_*.dylib $Surfaces
+cp $BUILD_ROOT/libs/ctrl-interface/*/libardour_*.dylib $Frameworks
+cp $BUILD_ROOT/libs/panners/*/lib*.dylib $Panners
+cp $BUILD_ROOT/libs/backends/*/lib*.dylib $Backends
+
+# Données partagées
+for f in $BUILD_ROOT/../share/export/*.preset $BUILD_ROOT/../share/export/*.format ; do
+	cp "$f" $ExportFormats
+done
+cp -R $BUILD_ROOT/../share/templates $Templates
+cp -R $BUILD_ROOT/../share/rdf $LRDFPresets
+cp -R $BUILD_ROOT/../share/plugin_metadata $PluginMetadata
+for x in $BUILD_ROOT/../share/midi_maps/*.map ; do
+	cp "$x" $MidiMaps
+done
+for x in $BUILD_ROOT/../share/patchfiles/*.midnam ; do
+	cp "$x" $PatchFiles
+done
+for x in $BUILD_ROOT/../share/scripts/*.lua ; do
+	BN=$(basename $x)
+	if test "${BN:0:1}" = "_"; then
+		# les scripts _-préfixés persos sont installés quand même (comme sur Windows)
+		cp "$x" $LuaScripts
+		continue
+	fi
+	cp "$x" $LuaScripts
+done
+cp -R $BUILD_ROOT/../share/web_surfaces $WebSurfaces
+rm -f $WebSurfaces/wscript
+cp -R $BUILD_ROOT/../share/media $MediaClips
+rm -f $MediaClips/wscript
+for x in $BUILD_ROOT/../share/mcp/*.device $BUILD_ROOT/../share/mcp/*.profile ; do
+	cp "$x" $MackieControl
+done
+cp $BUILD_ROOT/../share/chords.txt $Shared
+for x in $BUILD_ROOT/../share/osc/*.preset ; do
+	cp "$x" $OSC
+done
+
+# VAMP plugins
+cp $BUILD_ROOT/libs/vamp-plugins/libardourvampplugins.dylib $Frameworks
+cp $BUILD_ROOT/libs/vamp-pyin/libardourvamppyin.dylib $Frameworks
+
+# Suil (UI LV2 dans gtk2)
+cp $BUILD_ROOT/libs/tk/suil/libsuil_cocoa_in_gtk2.dylib $Frameworks
+
+# Scanners VST/AU
+if test -d $BUILD_ROOT/libs/fst ; then
+	cp $BUILD_ROOT/libs/fst/ardour-vst-scanner* $Frameworks/ 2>/dev/null
+	cp $BUILD_ROOT/libs/fst/ardour-vst3-scanner* $Frameworks/ 2>/dev/null
+fi
+if test -d $BUILD_ROOT/libs/auscan ; then
+	cp $BUILD_ROOT/libs/auscan/ardour-au-scanner* $Frameworks/ 2>/dev/null
+fi
+if test -f $BUILD_ROOT/libs/vfork/ardour-exec-wrapper ; then
+	cp $BUILD_ROOT/libs/vfork/ardour-exec-wrapper $Frameworks/
+fi
+
+echo "Copying dependent libraries (Homebrew + build tree) ..."
+while [ true ] ; do
+	missing=false
+	for file in $APPROOT/MacOS/* $Frameworks/* $Panners/*.dylib $Backends/*.dylib $Surfaces/*.dylib $GTK_ENGINE_DIR/*.dylib ; do
+		if ! file $file | grep -qs Mach-O ; then
+			continue
+		fi
+		deps=`otool -L $file | awk '{print $1}' | egrep "(/opt/|/usr/local/|^libs/)" | grep -v 'libjack\.' | grep -v "$(basename $file)"`
+		for dep in $deps ; do
+			base=`basename $dep`
+			if ! test -f $Frameworks/$base; then
+				if echo $dep | grep -sq '^libs' ; then
+					cp $BUILD_ROOT/$dep $Frameworks
+				else
+					cp $dep $Frameworks
+				fi
+				missing=true
+				chmod 755 $Frameworks/$base
+			fi
+		done
+	done
+	if test x$missing = xfalse ; then
+		break
+	fi
+done
+
+echo "Copying UI config / keys / menus ..."
+cp $BUILD_ROOT/gtk2_ardour/ardour.keys  $Resources
+cp $BUILD_ROOT/gtk2_ardour/ardour.menus $Resources
+cp $BUILD_ROOT/gtk2_ardour/default_ui_config $Resources
+cp $BUILD_ROOT/gtk2_ardour/clearlooks.rc $Resources
+
+# jeu de raccourcis Pro Tools (Trident) : régénéré pour macOS si présent
+if test -f ../../gtk2_ardour/ardour-pro-tools.keys.in ; then
+	(cd ../.. && perl tools/fmt-bindings --platform="darwin" --accelmap gtk2_ardour/ardour-pro-tools.keys.in) > $Resources/ardour-pro-tools.keys 2>/dev/null || rm -f $Resources/ardour-pro-tools.keys
+fi
+
+mkdir -p ${Resources}/icons
+mkdir -p ${Resources}/resources
+cp ../../system_config $Resources/system_config
+cp ../../gtk2_ardour/icons/*.png ${Resources}/icons/
+cp -r ../../gtk2_ardour/icons/cursor_* ${Resources}/icons/
+cp ../../gtk2_ardour/ArdourMono.ttf $Shared
+cp ../../gtk2_ardour/ArdourSans.ttf $Shared
+cp ../../gtk2_ardour/resources/${PRODUCT_PKG_DIR}-* ${Resources}/resources/
+
+# Thèmes du fork uniquement
+cp ../../gtk2_ardour/themes/*-${lower_case_appname}.colors $Themes
+
+# LV2 bundlés (a-*)
+cp -R $BUILD_ROOT/libs/LV2 $Frameworks/ 2>/dev/null
+
+# Spec LV2 (schémas .ttl) depuis Homebrew
+for lv2dir in "$BREW_PREFIX/lib/lv2" "$BREW_PREFIX/share/lv2" "$(brew --prefix lv2 2>/dev/null)/lib/lv2"; do
+	if test -d "$lv2dir"; then
+		for file in "$lv2dir"/*.lv2; do
+			BN=$(basename "$file")
+			mkdir -p $Frameworks/LV2/$BN
+			cp "$file"/*.ttl $Frameworks/LV2/$BN/ 2>/dev/null
+		done
+		break
+	fi
+done
+
+echo "Fixing up executable dependency names ..."
+executables=$MAIN_EXECUTABLE
+if test -f "$Frameworks/ardour-vst-scanner"; then
+	executables="$executables ../lib/ardour-vst-scanner"
+fi
+if test -f "$Frameworks/ardour-vst3-scanner"; then
+	executables="$executables ../lib/ardour-vst3-scanner"
+fi
+if test -f "$Frameworks/ardour-au-scanner"; then
+	executables="$executables ../lib/ardour-au-scanner"
+fi
+
+for exe in $executables; do
+	echo "Processing Executable: $exe"
+	EXE=$APPROOT/MacOS/$exe
+	changes=""
+	for lib in `otool -L $EXE | egrep "(/opt/|/usr/local/|libs/)" | awk '{print $1}' | grep -v 'libjack\.'` ; do
+		base=`basename $lib`
+		changes="$changes -change $lib @executable_path/../lib/$base"
+	done
+	if test "x$changes" != "x" ; then
+		install_name_tool $changes $EXE
+	fi
+done
+
+echo "Fixing up library names ..."
+for libdir in $Frameworks $Surfaces $Panners $Backends $Frameworks/LV2/* $GTK_ENGINE_DIR; do
+	libbase=`echo "$libdir" | sed 's#^'$Frameworks'##'`
+	for dylib in $libdir/*.dylib $libdir/*.so ; do
+		if test -L $dylib ; then
+			continue
+		fi
+		if ! test -f $dylib ; then
+			continue
+		fi
+		changes=""
+		for lib in `otool -L $dylib | egrep "(/opt/|/usr/local/|libs/)" | awk '{print $1}' | grep -v 'libjack\.'` ; do
+			base=`basename $lib`
+			if test -f $Frameworks/$base ; then
+				changes="$changes -change $lib @executable_path/../lib/$base"
+			fi
+		done
+		if test "x$changes" != x ; then
+			install_name_tool $changes $dylib || exit 1
+		fi
+		base=`basename $dylib`
+		install_name_tool -id @executable_path/../lib$libbase/$base $dylib
+	done
+done
+
+echo "Ad-hoc signing (requis sur Apple Silicon) ..."
+find $APPDIR -type f \( -name "*.dylib" -o -name "*.so" \) -exec codesign --force --sign - {} \; 2>/dev/null
+for f in $APPROOT/MacOS/* $Frameworks/ardour-*; do
+	if file "$f" 2>/dev/null | grep -qs Mach-O ; then
+		codesign --force --sign - "$f" 2>/dev/null
+	fi
+done
+codesign --force --sign - $APPDIR
+
+set -e
+
+#
+# DMG simple (pas de mise en scène Finder : pas de session GUI sur le runner CI)
+#
+echo "Building DMG ..."
+rm -rf $PRODUCT_PKG_DIR
+mkdir $PRODUCT_PKG_DIR
+mv $APPDIR $PRODUCT_PKG_DIR/
+ln -s /Applications $PRODUCT_PKG_DIR/Applications
+
+UC_DMG=$APPNAME-$release_version-arm64.dmg
+rm -f "$UC_DMG"
+hdiutil create -volname "$APPNAME-$release_version" -srcfolder "$PRODUCT_PKG_DIR" -ov -format UDZO "$UC_DMG"
+
+rm -rf $PRODUCT_PKG_DIR
+
+echo
+echo "packaging succeeded:"
+ls -l "$UC_DMG"
+echo "Done."

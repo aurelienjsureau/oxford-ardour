@@ -23,7 +23,7 @@ jobs:
             boost glib glibmm@2.66 libsigc++@2 cairomm@1.14 pangomm@2.46 \
             pango cairo fontconfig freetype libpng \
             libsndfile libsamplerate flac libogg libvorbis \
-            fftw aubio rubberband vamp-plugin-sdk liblrdf \
+            fftw aubio rubberband vamp-plugin-sdk \
             lv2 serd sord sratom lilv \
             liblo taglib libusb libarchive libxml2 \
             sound-touch cppunit readline curl
@@ -50,6 +50,7 @@ jobs:
             --program-name=$APPNAME \
             --optimize \
             --no-nls \
+            --no-lrdf \
             --with-backends=coreaudio,dummy
 
       - name: Build

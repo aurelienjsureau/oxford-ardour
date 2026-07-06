@@ -190,6 +190,13 @@ if test -f $BUILD_ROOT/libs/vfork/ardour-exec-wrapper ; then
 	cp $BUILD_ROOT/libs/vfork/ardour-exec-wrapper $Frameworks/
 fi
 
+# Libs internes Ardour (libardour, libpbd, libnam_core, ytk...) : leur install_name
+# est déjà @executable_path/../lib/ au link -> la boucle otool ne les voit pas, copie explicite.
+echo "Copying internal shared libraries ..."
+find $BUILD_ROOT/libs \( -name LV2 -o -name surfaces -o -name panners -o -name backends \) -prune -o -name "lib*.dylib" -print | while read f; do
+	cp "$f" $Frameworks/
+done
+
 echo "Copying dependent libraries (Homebrew + build tree) ..."
 while [ true ] ; do
 	missing=false

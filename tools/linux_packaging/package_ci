@@ -1,0 +1,179 @@
+#!/bin/bash
+
+# Packaging Linux pour CI — dérivé de tools/linux_packaging/package.
+# À lancer APRÈS linux_build_ci, dans le même répertoire.
+#
+# Produit deux installeurs à partir du même bundle :
+#   1. <App>-<ver>-x86_64.run   installeur shell auto-extractible (makeself), le
+#                               format historique d'Ardour : ./Oxford-9.7.5-x86_64.run
+#                               -> installe dans /opt, entrée de menu, lien Bureau,
+#                                  lien /usr/local/bin, désinstalleur, sanity check RT.
+#   2. <app>_<ver>_amd64.deb    même arborescence dans /opt/<App>-<ver>, plus
+#                               .desktop + icônes hicolor + /usr/bin/<app><major>.
+#
+# Usage: ./package_ci <AppName> [Vendor]
+
+set -e
+
+APPNAME=$1
+VENDOR=${2:-BourrinAudio}
+MAINTAINER=${DEB_MAINTAINER:-"BourrinAudio <bourrinlepoulpe@gmail.com>"}
+
+if test -z "$APPNAME"; then
+	echo "usage: package_ci <AppName> [Vendor]"
+	exit 1
+fi
+
+lower_case_appname=$(echo "$APPNAME" | tr '[:upper:]' '[:lower:]')
+EXENAME=$lower_case_appname
+
+BUILD_ROOT=../../build
+. ../define_versions.sh
+
+ARCH=x86_64
+BUNDLE="${APPNAME}_${ARCH}-${release_version}"
+PACKAGE="${APPNAME}-${release_version}-${ARCH}"
+
+if [ ! -e ${BUNDLE}.tar ] ; then
+	echo "ERROR: ${BUNDLE}.tar introuvable — lancer linux_build_ci d'abord"
+	exit 1
+fi
+
+################################################################################
+# 1. installeur shell auto-extractible (.run)
+################################################################################
+
+echo "=== Installeur .run ==="
+rm -rf ${PACKAGE} ${PACKAGE}.run
+
+mkdir ${PACKAGE}
+cp ${BUNDLE}.tar  ${PACKAGE}/
+cp ${BUNDLE}.size ${PACKAGE}/.${BUNDLE}.size
+cp install.sh     ${PACKAGE}/
+cp stage2.run     ${PACKAGE}/.stage2.run
+cp README         ${PACKAGE}/
+chmod a+x ${PACKAGE}/install.sh ${PACKAGE}/.stage2.run
+
+makeself --bzip2 ${PACKAGE}/ ${PACKAGE}.run "${APPNAME} ${release_version}" ./install.sh
+rm -rf ${PACKAGE}
+
+################################################################################
+# 2. paquet Debian (.deb)
+################################################################################
+
+echo "=== Paquet .deb ==="
+
+DEBROOT=debroot
+DEBVER=${release_version}
+DEBPKG=${lower_case_appname}
+INSTALL_PREFIX=/opt/${APPNAME}-${release_version}
+ICON_NAME=${lower_case_appname}${major_version}
+DESKTOP_FILE=${ICON_NAME}.desktop
+
+rm -rf ${DEBROOT}
+mkdir -p ${DEBROOT}/DEBIAN
+mkdir -p ${DEBROOT}/opt
+mkdir -p ${DEBROOT}/usr/bin
+mkdir -p ${DEBROOT}/usr/share/applications
+mkdir -p ${DEBROOT}/usr/share/doc/${DEBPKG}
+
+cp -a ${BUNDLE} ${DEBROOT}${INSTALL_PREFIX}
+
+# le désinstalleur du .run n'a pas de sens dans un paquet géré par dpkg
+rm -f ${DEBROOT}${INSTALL_PREFIX}/bin/*.uninstall.sh
+
+# lien de commande
+ln -s ${INSTALL_PREFIX}/bin/${EXENAME}${major_version} ${DEBROOT}/usr/bin/${EXENAME}${major_version}
+
+# entrée de menu
+cat > ${DEBROOT}/usr/share/applications/${DESKTOP_FILE} << EOF
+[Desktop Entry]
+Encoding=UTF-8
+Version=1.0
+Type=Application
+Terminal=false
+Exec=${INSTALL_PREFIX}/bin/${EXENAME}${major_version} %F
+Name=${APPNAME} ${major_version}
+GenericName=Digital Audio Workstation
+Icon=${ICON_NAME}
+Comment=Station audio numérique ${APPNAME}
+Categories=AudioVideo;AudioEditing;Audio;Recorder;
+MimeType=application/x-ardour;
+StartupNotify=true
+EOF
+
+# icônes hicolor
+for sz in 16 22 32 48 256; do
+	SRC=${DEBROOT}${INSTALL_PREFIX}/share/resources/${APPNAME}-icon_${sz}px.png
+	test -f "$SRC" || continue
+	mkdir -p ${DEBROOT}/usr/share/icons/hicolor/${sz}x${sz}/apps
+	cp "$SRC" ${DEBROOT}/usr/share/icons/hicolor/${sz}x${sz}/apps/${ICON_NAME}.png
+done
+
+# doc
+cp README ${DEBROOT}/usr/share/doc/${DEBPKG}/README 2>/dev/null || true
+cp ../../COPYING ${DEBROOT}/usr/share/doc/${DEBPKG}/copyright 2>/dev/null || true
+
+INSTALLED_SIZE=$(du -sk ${DEBROOT} | awk '{print $1}')
+
+cat > ${DEBROOT}/DEBIAN/control << EOF
+Package: ${DEBPKG}
+Version: ${DEBVER}
+Section: sound
+Priority: optional
+Architecture: amd64
+Installed-Size: ${INSTALLED_SIZE}
+Maintainer: ${MAINTAINER}
+Depends: libc6 (>= 2.35), libstdc++6, libgcc-s1, libx11-6, libxext6, libxi6,
+ libxrandr2, libxcursor1, libxinerama1, libxcomposite1, libxdamage1, libxfixes3,
+ libxrender1, libxcb1, libice6, libsm6, libdbus-1-3, libudev1
+Recommends: libasound2t64 | libasound2, jackd2 | pipewire-jack, xdg-utils
+Description: ${APPNAME} — station audio numérique
+ ${APPNAME} est un fork d'Ardour à l'esthétique et au traitement d'une console
+ de studio : tranche de canal intégrée (EQ, dynamique, coloration) sur chaque
+ piste et sur le master.
+ .
+ Les bibliothèques nécessaires sont embarquées dans /opt, le paquet ne dépend
+ que du socle système (X11, ALSA, dbus).
+EOF
+
+cat > ${DEBROOT}/DEBIAN/postinst << 'EOF'
+#!/bin/sh
+set -e
+if [ "$1" = "configure" ]; then
+	if command -v update-desktop-database >/dev/null 2>&1; then
+		update-desktop-database -q /usr/share/applications || true
+	fi
+	if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+		gtk-update-icon-cache -q -f /usr/share/icons/hicolor || true
+	fi
+fi
+exit 0
+EOF
+
+cat > ${DEBROOT}/DEBIAN/postrm << 'EOF'
+#!/bin/sh
+set -e
+if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
+	if command -v update-desktop-database >/dev/null 2>&1; then
+		update-desktop-database -q /usr/share/applications || true
+	fi
+	if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+		gtk-update-icon-cache -q -f /usr/share/icons/hicolor || true
+	fi
+fi
+exit 0
+EOF
+
+chmod 755 ${DEBROOT}/DEBIAN/postinst ${DEBROOT}/DEBIAN/postrm
+
+DEBFILE=${DEBPKG}_${DEBVER}_amd64.deb
+rm -f ${DEBFILE}
+dpkg-deb --build --root-owner-group ${DEBROOT} ${DEBFILE}
+rm -rf ${DEBROOT}
+
+echo
+echo "packaging succeeded:"
+ls -l ${PACKAGE}.run ${DEBFILE}
+dpkg-deb --info ${DEBFILE} | head -20
+echo "Done."

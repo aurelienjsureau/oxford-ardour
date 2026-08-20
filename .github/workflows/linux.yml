@@ -1,0 +1,102 @@
+name: Linux build (x86_64)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/linux.yml'
+      - 'tools/linux_packaging/**'
+
+env:
+  APPNAME: Oxford
+  VENDOR: BourrinAudio
+  DEBIAN_FRONTEND: noninteractive
+
+jobs:
+  build:
+    # 22.04 = glibc 2.35 : le bundle tourne sur Ubuntu 22.04+, Debian 12+, Mint 21+.
+    # Construire sur plus récent réduirait la compatibilité descendante.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # requis : la version vient de `git describe` (tag annoté 9.7)
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config python3 perl file chrpath makeself \
+            libboost-dev libglib2.0-dev libglibmm-2.4-dev libsigc++-2.0-dev \
+            libcairo2-dev libcairomm-1.0-dev libpango1.0-dev libpangomm-1.4-dev \
+            libfontconfig1-dev libfreetype6-dev libpng-dev \
+            libx11-dev libxext-dev libxi-dev libxrandr-dev libxcursor-dev \
+            libxinerama-dev libxcomposite-dev libxdamage-dev libxfixes-dev libxrender-dev \
+            libsndfile1-dev libsamplerate0-dev libflac-dev libogg-dev libvorbis-dev \
+            libfftw3-dev libaubio-dev librubberband-dev libsoundtouch-dev \
+            vamp-plugin-sdk libvamp-hostsdk3v5 \
+            lv2-dev liblilv-dev libserd-dev libsord-dev libsratom-dev liblrdf0-dev \
+            libltc-dev liblo-dev libtag1-dev libarchive-dev libcurl4-gnutls-dev \
+            libxml2-dev libusb-1.0-0-dev libudev-dev libdbus-1-dev libhidapi-dev \
+            libwebsockets-dev libfluidsynth-dev libreadline-dev libcppunit-dev \
+            libasound2-dev libjack-jackd2-dev libpulse-dev
+
+      - name: Configure
+        run: |
+          python3 ./waf configure \
+            --program-name=$APPNAME \
+            --optimize \
+            --no-nls \
+            --with-backends=jack,alsa,pulseaudio,dummy
+
+      - name: Build
+        run: python3 ./waf build
+
+      - name: Bundle
+        run: |
+          cd tools/linux_packaging
+          chmod +x linux_build_ci package_ci
+          ./linux_build_ci $APPNAME $VENDOR
+
+      - name: Package (.run + .deb)
+        run: |
+          cd tools/linux_packaging
+          ./package_ci $APPNAME $VENDOR
+
+      - name: Smoke test (dépendances du bundle résolues ?)
+        run: |
+          cd tools/linux_packaging
+          BUNDLE=$(ls -d ${APPNAME}_x86_64-*/ | head -1)
+          echo "Bundle: $BUNDLE"
+          BAD=0
+          for f in "$BUNDLE"bin/${APPNAME,,}-* $(find "$BUNDLE"lib -name '*.so*' -type f); do
+            file "$f" | grep -qs ELF || continue
+            OUT=$(LD_LIBRARY_PATH="$PWD/${BUNDLE}lib" ldd "$f" 2>&1 | grep "not found" || true)
+            if [ -n "$OUT" ]; then echo "MANQUANT dans $f:"; echo "$OUT"; BAD=1; fi
+          done
+          test $BAD -eq 0 || { echo "!!! dépendances non résolues"; exit 1; }
+          echo "OK : toutes les dépendances sont résolues dans le bundle"
+          # le paquet doit s'installer proprement
+          sudo dpkg -i ${APPNAME,,}_*_amd64.deb
+          ls -l /usr/bin/${APPNAME,,}9 /usr/share/applications/${APPNAME,,}9.desktop
+          sudo dpkg -r ${APPNAME,,}
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APPNAME }}-Linux-x86_64
+          path: |
+            tools/linux_packaging/*.run
+            tools/linux_packaging/*.deb
+          if-no-files-found: error
+
+      - name: Upload config log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-linux
+          path: |
+            build/config.log
+          if-no-files-found: ignore

@@ -4,6 +4,10 @@ on:
   workflow_dispatch:
   push:
     branches: [ main ]
+    paths:
+      # les minutes macOS comptent x10 : ne relancer que si le packaging mac change
+      - '.github/workflows/macos.yml'
+      - 'tools/osx_packaging/**'
 
 env:
   APPNAME: Oxford

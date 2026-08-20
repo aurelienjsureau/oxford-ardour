@@ -1,0 +1,394 @@
+#!/bin/bash
+
+# Packaging Linux pour CI (GitHub Actions) — dérivé de tools/linux_packaging/build.
+#
+# Différences avec le script d'origine :
+#  - dépendances système via apt (distro) au lieu du stack GTK ardour.org ($HOME/gtk/inst) ;
+#  - la boucle de dépendances EMBARQUE les libs /usr/lib (sauf noyau système : libc,
+#    libstdc++, X11, GL, ALSA, JACK, dbus, udev...) -> bundle portable, sinon la machine
+#    cible devrait avoir exactement les mêmes glibmm/cairomm/pangomm/lilv/... ;
+#  - pas de Harrison / x42 / harvid / xjadeo / media bundle / NLS / notarisation ;
+#  - le nom de l'exécutable est cherché par glob (le fork peut s'appeler oxford-X / trident-X).
+#
+# Produit :  <App>_x86_64-<ver>/            (arborescence du bundle, gardée pour le .deb)
+#            <App>_x86_64-<ver>.tar + .size (consommés par package_ci -> installeur .run)
+#            stage2.run                     (idem)
+#
+# Usage: ./linux_build_ci <AppName> [Vendor]     (ex: ./linux_build_ci Oxford BourrinAudio)
+
+set -e
+
+APPNAME=$1
+VENDOR=${2:-BourrinAudio}
+
+if test -z "$APPNAME"; then
+	echo "usage: linux_build_ci <AppName> [Vendor]"
+	exit 1
+fi
+
+lower_case_appname=$(echo "$APPNAME" | tr '[:upper:]' '[:lower:]')
+EXENAME=$lower_case_appname
+
+BUILD_ROOT=../../build
+
+. ../define_versions.sh
+
+echo "Version is $release_version (major $major_version)"
+
+case `uname -m` in
+	x86_64|amd64|AMD64) ARCH='x86_64' ;;
+	*) echo "ERROR - architecture non supportée `uname -m`" ; exit 1 ;;
+esac
+
+APPDIR=${APPNAME}_${ARCH}-${release_version}
+APP_VER_NAME=${APPNAME}-${release_version}
+
+APPBIN=$APPDIR/bin
+APPLIB=$APPDIR/lib
+Libraries=$APPLIB
+Etc=$APPDIR/etc
+Shared=$APPDIR/share
+
+Surfaces=$APPLIB/surfaces
+Panners=$APPLIB/panners
+Backends=$APPLIB/backends
+
+Themes=$Shared/themes
+Templates=$Shared/templates
+LRDFPresets=$Shared/rdf
+PluginMetadata=$Shared/plugin_metadata
+ExportFormats=$Shared/export
+MidiMaps=$Shared/midi_maps
+PatchFiles=$Shared/patchfiles
+LuaScripts=$Shared/scripts
+MediaClips=$Shared/media
+WebSurfaces=$Shared/web_surfaces
+MackieControl=$Shared/mcp
+OSC=$Shared/osc
+
+echo "Removing old $APPDIR tree ..."
+rm -rf $APPDIR/
+
+echo "Building new app directory structure ..."
+mkdir -p $APPBIN $APPLIB $Etc $Shared $Themes $Surfaces $Panners $Backends
+mkdir -p $MidiMaps $MackieControl $OSC $ExportFormats $PatchFiles $LuaScripts
+mkdir -p $Shared/doc
+
+#
+# script de lancement bin/<exe><major>  (met LD_LIBRARY_PATH puis exec bin/<exe>-<ver>)
+#
+ENVIRONMENT=environment
+rm -f $ENVIRONMENT
+touch $ENVIRONMENT
+echo export 'PATH="/usr/local/bin:/opt/bin:$PATH"' >> $ENVIRONMENT
+
+sed -e "/^%ENV%/r $ENVIRONMENT" -e '/^%ENV%/d' \
+    -e 's/%VER%/'"${release_version}"'/;s/%EXENAME%/'"${EXENAME}"'/' \
+    < ardour.sh.in > $APPBIN/${EXENAME}${major_version}
+rm $ENVIRONMENT && chmod 775 $APPBIN/${EXENAME}${major_version}
+
+#
+# exécutable principal : le target gtk2_ardour peut s'appeler oxford-X / trident-X / ardour-X
+#
+echo "Copying executable ..."
+EXE_SRC=""
+for cand in $EXENAME oxford trident ardour; do
+	if test -f "$BUILD_ROOT/gtk2_ardour/$cand-$release_version"; then
+		EXE_SRC="$BUILD_ROOT/gtk2_ardour/$cand-$release_version"
+		break
+	fi
+done
+if test -z "$EXE_SRC"; then
+	# dernier recours : glob sur un binaire ELF exécutable
+	for f in $BUILD_ROOT/gtk2_ardour/*-[0-9]*; do
+		if test -x "$f" && file "$f" | grep -qs ELF; then EXE_SRC="$f"; break; fi
+	done
+fi
+if test -z "$EXE_SRC"; then
+	echo "ERROR: exécutable introuvable dans $BUILD_ROOT/gtk2_ardour/"
+	ls -l $BUILD_ROOT/gtk2_ardour/ || true
+	exit 1
+fi
+echo "  -> $EXE_SRC"
+cp "$EXE_SRC" $APPBIN/${EXENAME}-${release_version}
+strip -s $APPBIN/${EXENAME}-${release_version}
+
+#
+# moteur GTK clearlooks (chargé via GTK_PATH=$Libraries/gtkengines)
+#
+GTK_ENGINE_DIR=$Libraries/gtkengines/engines
+mkdir -p $GTK_ENGINE_DIR
+echo "Copying GTK engine ..."
+cp $BUILD_ROOT/libs/clearlooks-newer/libclearlooks.so $Libraries
+(cd $GTK_ENGINE_DIR && ln -sf ../../libclearlooks.so . )
+
+set +e  # à partir d'ici une partie des fichiers est optionnelle
+
+# surfaces de contrôle / panners / backends
+cp $BUILD_ROOT/libs/surfaces/*/libardour_*.so* $Surfaces
+cp $BUILD_ROOT/libs/ctrl-interface/*/libardour_*.so* $Libraries
+cp $BUILD_ROOT/libs/panners/*/lib*.so* $Panners
+for backend in jack alsa dummy pulseaudio; do
+	cp $BUILD_ROOT/libs/backends/$backend/lib*.so* $Backends 2>/dev/null
+done
+
+# plugins VAMP internes
+cp $BUILD_ROOT/libs/vamp-plugins/libardourvampplugins.so $Libraries
+cp $BUILD_ROOT/libs/vamp-pyin/libardourvamppyin.so $Libraries
+
+# suil (GUI LV2 dans GTK2) : in-tree depuis Ardour 8
+if test -d $BUILD_ROOT/libs/tk/suil/ ; then
+	cp $BUILD_ROOT/libs/tk/suil/libsuil_*_in_gtk2.so $Libraries
+fi
+
+# scanners VST / wrapper vfork / réservation de périphérique ALSA
+if test -d $BUILD_ROOT/libs/fst ; then
+	cp $BUILD_ROOT/libs/fst/ardour-vst-scanner*  $APPLIB
+	cp $BUILD_ROOT/libs/fst/ardour-vst3-scanner* $APPLIB
+	strip -s $APPLIB/ardour-vst-scanner*  2>/dev/null
+	strip -s $APPLIB/ardour-vst3-scanner* 2>/dev/null
+fi
+if test -f $BUILD_ROOT/libs/vfork/ardour-exec-wrapper ; then
+	cp $BUILD_ROOT/libs/vfork/ardour-exec-wrapper $APPLIB
+	strip -s $APPLIB/ardour-exec-wrapper
+fi
+if test -f $BUILD_ROOT/libs/ardouralsautil/ardour-request-device; then
+	cp $BUILD_ROOT/libs/ardouralsautil/ardour-request-device $APPLIB/
+	strip -s $APPLIB/ardour-request-device
+fi
+if test -f $BUILD_ROOT/libs/ardour-avahi ; then
+	cp $BUILD_ROOT/libs/ardour-avahi $APPLIB/ardour-avahi
+	chmod +x $APPLIB/ardour-avahi
+fi
+
+#
+# données partagées (générées ou copiées depuis l'arbre)
+#
+for x in $BUILD_ROOT/../share/midi_maps/*.map ; do cp "$x" $MidiMaps ; done
+for x in $BUILD_ROOT/../share/patchfiles/*.midnam ; do cp "$x" $PatchFiles ; done
+for x in $BUILD_ROOT/../share/scripts/*.lua ; do cp "$x" $LuaScripts ; done
+for x in $BUILD_ROOT/../share/mcp/*.device $BUILD_ROOT/../share/mcp/*.profile ; do cp "$x" $MackieControl ; done
+for x in $BUILD_ROOT/../share/osc/*.preset ; do cp "$x" $OSC ; done
+for x in $BUILD_ROOT/../share/export/*.preset $BUILD_ROOT/../share/export/*.format ; do cp "$x" $ExportFormats ; done
+cp $BUILD_ROOT/../share/chords.txt $Shared
+cp -a $BUILD_ROOT/../share/templates       $Templates
+cp -a $BUILD_ROOT/../share/rdf             $LRDFPresets
+cp -a $BUILD_ROOT/../share/plugin_metadata $PluginMetadata
+cp -a $BUILD_ROOT/../share/web_surfaces    $WebSurfaces && rm -f $WebSurfaces/wscript
+cp -a $BUILD_ROOT/../share/media           $MediaClips  && rm -f $MediaClips/wscript
+if test -d $BUILD_ROOT/../share/mixer_settings; then
+	mkdir -p $Shared/mixer_settings
+	cp $BUILD_ROOT/../share/mixer_settings/*.lua $Shared/mixer_settings
+fi
+
+#
+# session-utils + luasession
+#
+HAVE_SESSION_UTILS=false
+for file in $BUILD_ROOT/session_utils/${lower_case_appname}${major_version}-* ; do
+	test -f "$file" || continue
+	BN=$(basename $file)
+	cp -v $file $APPLIB/
+	strip -s $APPLIB/${BN}
+	ln -sf ../lib/ardour-util.sh $APPBIN/${BN}
+	HAVE_SESSION_UTILS=true
+done
+if test -x $BUILD_ROOT/luasession/luasession; then
+	BN=${lower_case_appname}${major_version}-lua
+	cp -v $BUILD_ROOT/luasession/luasession $APPLIB/$BN
+	strip -s $APPLIB/${BN}
+	ln -sf ../lib/ardour-util.sh $APPBIN/${BN}
+	HAVE_SESSION_UTILS=true
+fi
+if test "$HAVE_SESSION_UTILS" = true ; then
+	cat >> $APPLIB/ardour-util.sh << EOF
+#!/bin/sh
+
+BIN_DIR=\$(dirname \$(readlink -f \$0))
+INSTALL_DIR=\$(dirname \$BIN_DIR)
+
+export LD_LIBRARY_PATH=\$INSTALL_DIR/lib\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}
+
+export ARDOUR_DATA_PATH=\$INSTALL_DIR/share
+export ARDOUR_CONFIG_PATH=\$INSTALL_DIR/etc
+export ARDOUR_DLL_PATH=\$INSTALL_DIR/lib
+export VAMP_PATH=\$INSTALL_DIR/lib\${VAMP_PATH:+:\$VAMP_PATH}
+
+SELF=\$(basename \$0)
+exec "\$INSTALL_DIR/lib/\$SELF" "\$@"
+EOF
+	chmod +x $APPLIB/ardour-util.sh
+fi
+
+set -e
+
+#
+# ------------------------------------------------------------------
+# Fermeture des dépendances
+# ------------------------------------------------------------------
+# Le script d'origine EXCLUT tout ce qui vient de /usr/lib (ses deps sont dans
+# $HOME/gtk/inst). Ici les deps viennent d'apt : on embarque tout SAUF le noyau
+# système (ABI stable / lié au matériel ou au serveur son), sinon le bundle ne
+# tourne que sur une machine identique à celle du runner.
+#
+KEEP_SYSTEM='^(ld-linux.*|libc|libm|libdl|libpthread|librt|libresolv|libnsl|libutil|libanl'
+KEEP_SYSTEM=$KEEP_SYSTEM'|libgcc_s|libstdc\+\+'
+KEEP_SYSTEM=$KEEP_SYSTEM'|libX11|libX11-xcb|libXext|libXi|libXrandr|libXcursor|libXinerama'
+KEEP_SYSTEM=$KEEP_SYSTEM'|libXcomposite|libXdamage|libXfixes|libXrender|libXau|libXdmcp'
+KEEP_SYSTEM=$KEEP_SYSTEM'|libXss|libXt|libXmu|libxcb.*|libICE|libSM'
+KEEP_SYSTEM=$KEEP_SYSTEM'|libGL|libGLX|libGLdispatch|libGLU|libEGL|libOpenGL|libdrm|libgbm|libglapi'
+KEEP_SYSTEM=$KEEP_SYSTEM'|libasound|libjack.*|libpulse.*|libpipewire.*|libspa.*'
+KEEP_SYSTEM=$KEEP_SYSTEM'|libdbus-1|libudev|libsystemd|libwayland.*'
+KEEP_SYSTEM=$KEEP_SYSTEM'|libselinux|libcap|libmount|libblkid|libpcre2-8'
+KEEP_SYSTEM=$KEEP_SYSTEM')\.so.*$'
+
+OURLIBDIR=$BUILD_ROOT/libs
+OURLIBS=$OURLIBDIR/tk/ydk-pixbuf:$OURLIBDIR/tk/ztk:$OURLIBDIR/tk/ydk:$OURLIBDIR/tk/ytk:$OURLIBDIR/tk/suil:$OURLIBDIR/tk/ztkmm:$OURLIBDIR/tk/ydkmm:$OURLIBDIR/tk/ytkmm:$OURLIBDIR/ctrl-interface/midi_surface:$OURLIBDIR/ctrl-interface/control_protocol:$OURLIBDIR/ardour:$OURLIBDIR/midi++2:$OURLIBDIR/pbd:$OURLIBDIR/gtkmm2ext:$OURLIBDIR/glibmm2:$OURLIBDIR/canvas:$OURLIBDIR/widgets:$OURLIBDIR/waveview:$OURLIBDIR/evoral:$OURLIBDIR/evoral/src/libsmf:$OURLIBDIR/audiographer:$OURLIBDIR/temporal:$OURLIBDIR/libltc:$OURLIBDIR/qm-dsp:$OURLIBDIR/ardouralsautil:$OURLIBDIR/ptformat:$OURLIBDIR/aaf:$OURLIBDIR/NeuralAmpModelerCore:$BUILD_ROOT/gtk2_ardour
+
+echo "Copying dependent libraries ..."
+declare -A depChecked=()
+
+while [ true ] ; do
+	missing=false
+	filelist=`find $APPLIB/ -type f`
+	filelist="$APPBIN/${EXENAME}-${release_version} $filelist"
+
+	for file in $filelist ; do
+		if ! file $file | grep -qs ELF ; then continue ; fi
+		if test -n "${depChecked[$file]}" ; then continue ; fi
+		depChecked[$file]=1
+
+		# les wrappers suil/qt tireraient tout QT : ignorés
+		if echo $file | grep -qs 'libsuil_.*qt[45]' ; then continue; fi
+
+		deps=`LD_LIBRARY_PATH=$OURLIBS${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} ldd $file 2>/dev/null | grep -v libwine.so | awk '{print $3}'`
+
+		echo -n "."
+		for dep in $deps ; do
+			if test "not" = "${dep}"; then
+				echo ""
+				echo "!!! ERROR !!! - dépendance introuvable pour $file :"
+				(LD_LIBRARY_PATH=$OURLIBS${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} ldd $file)
+				exit 1
+			fi
+
+			# adresses fixes (linux-vdso...)
+			if echo $dep | grep -qs '0x' ; then continue; fi
+
+			base=`basename $dep`
+
+			# noyau système : jamais embarqué
+			if echo $base | grep -qsE "$KEEP_SYSTEM" ; then continue; fi
+
+			if ! test -f $Libraries/$base; then
+				parent=$(basename ${file})
+				if echo $dep | grep -sq '^libs' ; then
+					echo "Copying $base (requis par ${parent})"
+					cp $BUILD_ROOT/$dep $Libraries
+				else
+					echo "Copying $base (requis par ${parent})"
+					cp $dep $Libraries
+				fi
+				chmod 755 $Libraries/$base
+				# RPATH neutralisé : le loader ne doit chercher que dans le bundle
+				chrpath -r foo $Libraries/$base >/dev/null 2>&1 || true
+				missing=true
+			fi
+		done
+	done
+	test x$missing = xfalse && break
+done
+echo
+
+echo "Stripping bundled libraries ..."
+find $APPLIB/ -name "*.so*" -print0 | xargs -0 chmod u+w
+find $APPLIB/ -name "*.so*" -print0 | xargs -0 strip -s 2>/dev/null || true
+find $APPLIB/ -name "*.so*" -print0 | xargs -0 chmod a+rx
+
+# alias sans suffixe d'ABI (certains plugins font dlopen("libfoo.so"))
+(
+cd $APPLIB/
+for lib in *.so.[0-9]*; do
+	test -f "$lib" || continue
+	link=$(echo $lib | sed 's/\.[0-9]*$//')
+	test -e "$link" || ln -s $lib $link
+done
+)
+
+#
+# configuration / raccourcis / thème
+#
+echo "Copying config files ..."
+cp $BUILD_ROOT/gtk2_ardour/*.keys          $Etc 2>/dev/null || true
+cp $BUILD_ROOT/gtk2_ardour/*.menus         $Etc 2>/dev/null || true
+cp $BUILD_ROOT/gtk2_ardour/clearlooks*.rc  $Etc
+cp $BUILD_ROOT/gtk2_ardour/default_ui_config $Etc
+
+# jeu de raccourcis Pro Tools : régénéré pour la plateforme courante
+if test -f ../../gtk2_ardour/ardour-pro-tools.keys.in ; then
+	(cd ../.. && perl tools/fmt-bindings --platform="linux" --accelmap gtk2_ardour/ardour-pro-tools.keys.in) \
+		> $Etc/ardour-pro-tools.keys 2>/dev/null || echo "  (regen ardour-pro-tools.keys ignoré)"
+fi
+
+mkdir -p ${Shared}/icons ${Shared}/resources
+cp ../../system_config $Etc/system_config
+cp ../../gtk2_ardour/icons/*.png ${Shared}/icons
+cp -r ../../gtk2_ardour/icons/cursor_* ${Shared}/icons/
+cp ../../gtk2_ardour/ArdourMono.ttf $Shared
+cp ../../gtk2_ardour/ArdourSans.ttf $Shared
+# resources du fork : icônes, splash, knobs PNG, fader, profil NAM (.nam)
+cp ../../gtk2_ardour/resources/${APPNAME}-* ${Shared}/resources/
+# thèmes du fork uniquement (*-oxford.colors)
+cp ../../gtk2_ardour/themes/*-${lower_case_appname}.colors $Themes
+
+#
+# LV2 : bundles internes (a-*) + spécifications .ttl du système
+#
+cp -R $BUILD_ROOT/libs/LV2 $APPLIB/ 2>/dev/null || true
+for lv2root in /usr/lib/lv2 /usr/lib/$(uname -m)-linux-gnu/lv2 /usr/local/lib/lv2 ; do
+	test -d "$lv2root" || continue
+	for file in "$lv2root"/*.lv2; do
+		BN=$(basename "$file")
+		mkdir -p $APPLIB/LV2/$BN
+		cp "$file"/*.ttl $APPLIB/LV2/$BN/ 2>/dev/null || true
+	done
+	break
+done
+
+#
+# sanityCheck (appelé par l'installeur pour diagnostiquer temps-réel / memlock)
+#
+if [ -e $BUILD_ROOT/tools/sanity_check/sanityCheck ]; then
+	cp $BUILD_ROOT/tools/sanity_check/sanityCheck $APPBIN
+else
+	echo "!!! ERROR !!! sanityCheck manquant — l'installeur en a besoin"
+	exit 1
+fi
+
+#
+# désinstalleur + stage2 de l'installeur
+#
+sed -e "s/%REPLACE_PGM%/${APPNAME}/" \
+    -e "s/%REPLACE_VENDOR%/${VENDOR}/" \
+    -e "s/%REPLACE_MAJOR_VERSION%/${major_version}/" \
+    -e "s/%REPLACE_VERSION%/${release_version}/" \
+    -e "s/%REPLACE_TYPE%//" < uninstall.sh.in > $APPBIN/${APP_VER_NAME}.uninstall.sh
+chmod a+x $APPBIN/${APP_VER_NAME}.uninstall.sh
+
+sed -e "s/%REPLACE_MAJOR_VERSION%/${major_version}/;s/%REPLACE_PGM%/${APPNAME}/;s/%REPLACE_VENDOR%/${VENDOR}/;s/%REPLACE_EXE%/${EXENAME}/" \
+    < stage2.run.in > stage2.run
+chmod a+x stage2.run
+
+echo "Building tarball ..."
+rm -f $APPDIR.tar
+tar -cf $APPDIR.tar $APPDIR
+
+echo "Calculating bundle size"
+du -sb $APPDIR/ | awk '{print $1}' > $APPDIR.size
+( cd $APPDIR ; find . ) > file_list.txt
+
+# NB : contrairement au script d'origine, $APPDIR est CONSERVÉ (package_ci en a
+# besoin pour construire le .deb).
+
+echo "Done."
+ls -l $APPDIR.tar $APPDIR.size

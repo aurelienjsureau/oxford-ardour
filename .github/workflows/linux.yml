@@ -65,19 +65,45 @@ jobs:
           cd tools/linux_packaging
           ./package_ci $APPNAME $VENDOR
 
-      - name: Smoke test (dépendances du bundle résolues ?)
+      - name: Smoke test (bundle réellement autonome ?)
         run: |
           cd tools/linux_packaging
           BUNDLE=$(ls -d ${APPNAME}_x86_64-*/ | head -1)
           echo "Bundle: $BUNDLE"
+          # Socle système : seules ces bibliothèques ont le droit de venir de la machine.
+          # (doit rester aligné sur KEEP_SYSTEM de linux_build_ci)
+          KEEP='^(ld-linux.*|libc|libm|libdl|libpthread|librt|libresolv|libnsl|libutil|libanl'
+          KEEP=$KEEP'|libgcc_s|libstdc\+\+|libX11|libX11-xcb|libXext|libXi|libXrandr|libXcursor'
+          KEEP=$KEEP'|libXinerama|libXcomposite|libXdamage|libXfixes|libXrender|libXau|libXdmcp'
+          KEEP=$KEEP'|libXss|libXt|libXmu|libxcb.*|libICE|libSM|libGL|libGLX|libGLdispatch|libGLU'
+          KEEP=$KEEP'|libEGL|libOpenGL|libdrm|libgbm|libglapi|libasound|libjack.*|libpulse.*'
+          KEEP=$KEEP'|libpipewire.*|libspa.*|libdbus-1|libudev|libsystemd|libwayland.*'
+          KEEP=$KEEP'|libselinux|libcap|libmount|libblkid|libpcre2-8)\.so.*$'
           BAD=0
+          # 1. aucune dépendance manquante
           for f in "$BUNDLE"bin/${APPNAME,,}-* $(find "$BUNDLE"lib -name '*.so*' -type f); do
             file "$f" | grep -qs ELF || continue
             OUT=$(LD_LIBRARY_PATH="$PWD/${BUNDLE}lib" ldd "$f" 2>&1 | grep "not found" || true)
             if [ -n "$OUT" ]; then echo "MANQUANT dans $f:"; echo "$OUT"; BAD=1; fi
           done
-          test $BAD -eq 0 || { echo "!!! dépendances non résolues"; exit 1; }
-          echo "OK : toutes les dépendances sont résolues dans le bundle"
+          # 2. rien ne doit être résolu HORS du bundle en dehors du socle. Le test
+          #    précédent ne voyait pas ce cas : les libs du runner le masquaient.
+          for f in "$BUNDLE"bin/${APPNAME,,}-* $(find "$BUNDLE"lib -maxdepth 1 -name '*.so*' -type f); do
+            file "$f" | grep -qs ELF || continue
+            while read -r path; do
+              case "$path" in "$PWD/${BUNDLE}"*) continue ;; esac
+              base=$(basename "$path")
+              echo "$base" | grep -qsE "$KEEP" && continue
+              echo "HORS BUNDLE : $base (tiré par $(basename $f)) depuis $path"
+              BAD=1
+            done < <(LD_LIBRARY_PATH="$PWD/${BUNDLE}lib" ldd "$f" 2>/dev/null | awk '/=> \//{print $3}')
+          done
+          # 3. quelques dépendances tierces doivent être physiquement présentes
+          for want in libglibmm libsndfile libcairomm libpangomm liblilv libtag librubberband; do
+            ls "$BUNDLE"lib/${want}* >/dev/null 2>&1 || { echo "ABSENTE du bundle : $want"; BAD=1; }
+          done
+          test $BAD -eq 0 || { echo "!!! bundle non autonome"; exit 1; }
+          echo "OK : bundle autonome ($(find "$BUNDLE"lib -maxdepth 1 -name '*.so*' | wc -l) bibliothèques)"
           # le paquet doit s'installer proprement
           sudo dpkg -i ${APPNAME,,}_*_amd64.deb
           ls -l /usr/bin/${APPNAME,,}9 /usr/share/applications/${APPNAME,,}9.desktop
@@ -88,7 +114,7 @@ jobs:
         with:
           name: ${{ env.APPNAME }}-Linux-x86_64
           path: |
-            tools/linux_packaging/*.run
+            tools/linux_packaging/${{ env.APPNAME }}-*.run
             tools/linux_packaging/*.deb
           if-no-files-found: error
 

@@ -2267,6 +2267,9 @@ private:
 		int                direction;
 		bool               first_move;
 		bool               did_reorder;
+		/* OXFORD : rang d'insertion visé parmi les pistes visibles (-1 = aucun).
+		 * Le réordonnancement n'est appliqué qu'au relâchement. */
+		int                target;
 
 		TrackDrag (RouteTimeAxisView* rtav, ARDOUR::Session& s)
 			: track (rtav)
@@ -2280,9 +2283,14 @@ private:
 			, direction (0)
 			, first_move (true)
 			, did_reorder (false)
+			, target (-1)
 		{}
 
 	};
+
+	/* OXFORD : trait d'insertion affiché pendant le glisser d'un en-tête de piste */
+	Gtk::EventBox _track_drop_marker;
+	void apply_track_drag (TimeAxisView* dragged, int target);
 	TrackDrag* track_drag;
 
 	MarkerBarType _visible_marker_types;

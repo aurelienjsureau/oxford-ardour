@@ -146,6 +146,14 @@ public:
 	/* Trident : accès aux tranches pour le link sur sélection (Alt) */
 	std::list<MixerStrip*> const& mixer_strips () const { return strips; }
 
+	/* OXFORD — déplacement des tranches par GLISSER (façon fenêtre Mix de Pro
+	 * Tools) : on attrape la tranche par son bouton de nom, un trait d'insertion
+	 * suit la souris, l'ordre est appliqué au relâchement. Piloté par MixerStrip. */
+	void start_strip_drag (MixerStrip*);
+	void mid_strip_drag (int x_root);
+	void end_strip_drag ();
+	bool strip_dragging () const { return _strip_drag != 0; }
+
 	void show_editor_window () const;
 
 	void register_actions ();
@@ -233,6 +241,12 @@ private:
 	Gtk::Label            vca_label;
 	Gtk::EventBox         vca_scroller_base;
 	Gtk::HBox             out_packer;
+
+	/* OXFORD — glisser-déposer de tranche (voir start/mid/end_strip_drag) */
+	MixerStrip*           _strip_drag = 0;          // tranche en cours de déplacement
+	Gtk::EventBox         _strip_drop_marker;       // trait d'insertion (ambre)
+	int                   _strip_drop_index = -1;   // position d'insertion visée
+	GdkCursor*            _strip_predrag_cursor = 0;
 
 	Gtk::Notebook             _sidebar_notebook;
 	ArdourWidgets::MetaButton _sidebar_pager1;

@@ -33,6 +33,11 @@ public:
 	OxfordConsolePanel ();
 	~OxfordConsolePanel ();
 
+	/* La section MONITOR d'Ardour est hébergée par la vue MASTER de ce panneau
+	 * (le panneau ne sert à rien sur le master : on y met la régie). Appelé par
+	 * Mixer_UI quand le bus Monitor apparaît / disparaît ; 0 = retirer. */
+	void set_monitor_widget (Gtk::Widget* w);
+
 private:
 	Gtk::VBox _box;   // conteneur interne ; l'EventBox porte le fond clair global
 
@@ -83,7 +88,7 @@ private:
 	Gtk::DrawingArea _dyn_curve;
 	Gtk::Notebook _dyn_nb;
 	Gtk::ComboBoxText _dyn_sel;
-	ArdourWidgets::ArdourButton _btn_eq, _btn_dyn, _btn_color, _btn_master;
+	ArdourWidgets::ArdourButton _btn_eq, _btn_dyn, _btn_master;
 	ArdourWidgets::ArdourButton _curve_btn;     // cycle 4 types de courbe
 	ArdourWidgets::ArdourButton _timing_btn;    // cycle 3 lois de timing
 	ArdourWidgets::ArdourButton _hp_slope_btn, _lp_slope_btn;  // off/6/12/.../36 dB-oct
@@ -127,8 +132,17 @@ private:
 	bool on_dyn_expose (GdkEventExpose*);
 	Gtk::Widget* build_eq ();
 	Gtk::Widget* build_dyn ();
-	Gtk::Widget* build_color ();   // TAPE 3348 + Warmth (vue piste)
+	Gtk::Widget* build_master ();   // MONITOR + PCM-1630 + limiteur post-PCM (vue master)
 	void show_view (int page);
+
+	/* vue MASTER : accueille la section monitor d'Ardour + la régie de sortie */
+	Gtk::VBox   _mon_slot;            // conteneur d'accueil du tearoff monitor
+	Gtk::Label  _mon_note;            // message quand il n'y a pas de bus Monitor
+	ArdourWidgets::ArdourButton _mon_create_btn;   // "Créer le bus Monitor"
+	Gtk::Widget* _mon_widget = 0;     // tearoff hébergé (non possédé)
+	Gtk::Label  _pcmlim_gr;           // réduction du limiteur post-PCM (texte)
+	bool _masterSelected = false;     // la tranche master est sélectionnée
+	int  _lastTrackPage  = 0;         // page à restaurer en revenant sur une piste
 
 	bool on_timer ();
 	void refresh ();

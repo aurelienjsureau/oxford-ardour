@@ -5707,15 +5707,16 @@ Route::setup_invisible_processors ()
 			/* PISTE : Oxford collé JUSTE AVANT le fader (rien d'insérable entre). */
 			new_processors.insert (amp, _oxford);
 		} else if (_oxford_tail) {
-			/* MASTER : chaîne console verrouillée autour du fader, DAC tout dernier.
-			 *   [Front=comp] collé AVANT le fader, [Tail=warmth/limiter] JUSTE APRÈS,
-			 *   puis tes plugins post-fader, puis [DAC=convertisseur] en absolu dernier.
-			 *   -> on peut placer des plugins APRÈS Oxford (entre Tail et DAC). */
+			/* MASTER : bloc console verrouillé autour du fader, PUIS tes plugins.
+			 *   [Front=comp] collé AVANT le fader, [Tail=warmth/limiter/convertisseur]
+			 *   JUSTE APRÈS, puis [PCM-1630] collé au Tail, puis tes plugins post-fader.
+			 *   -> on peut placer un limiteur/plugin APRÈS le PCM-1630 (le modèle NAM
+			 *      remonte des crêtes : c'est le seul endroit où on peut les rattraper). */
 			new_processors.insert (amp, _oxford);              // front collé avant le fader
 			ProcessorList::iterator after_amp = amp; ++after_amp;
 			new_processors.insert (after_amp, _oxford_tail);   // tail juste après le fader
 			if (_oxford_dac) {
-				new_processors.insert (main, _oxford_dac);     // DAC : tout dernier (avant les sorties)
+				new_processors.insert (after_amp, _oxford_dac);   // PCM-1630 juste après le tail
 			}
 		} else {
 			/* bus simple : module unique juste avant les sorties */

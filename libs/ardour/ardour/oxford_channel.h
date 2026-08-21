@@ -155,6 +155,7 @@ public:
 	float expGrDb ();          // réduction Expander (Strip)
 	float dynLimGrDb ();       // réduction Limiter de la section Dynamics (Strip)
 	float busLevel ();         // niveau de sortie linéaire (Bus, VU)
+	float dynInputDb ();       // niveau du sidechain Dynamics (Strip) : point mobile du graphe
 
 	/* Persistance session */
 	int set_state (const XMLNode&, int version);

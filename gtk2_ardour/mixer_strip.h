@@ -372,6 +372,13 @@ private:
 	void build_route_ops_menu ();
 	gboolean name_button_button_press (GdkEventButton*);
 	gboolean number_button_button_press (GdkEventButton*);
+
+	/* OXFORD : glisser la tranche par son bouton de nom pour la déplacer
+	 * (le déplacement effectif est piloté par Mixer_UI::*_strip_drag). */
+	bool     name_button_motion (GdkEventMotion*);
+	gboolean name_button_button_release (GdkEventButton*);
+	double   _name_drag_x0 = 0;
+	bool     _name_drag_armed = false;
 	void list_route_operations ();
 
 	bool select_route_group (GdkEventButton *);

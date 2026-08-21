@@ -37,6 +37,8 @@
 #include <string>
 #include <algorithm>
 #include <map>
+#include <set>
+#include <vector>
 
 #include "ardour_ui.h"
 /*
@@ -83,6 +85,8 @@
 #include "ardour/route.h"
 #include "ardour/route_group.h"
 #include "ardour/session_playlists.h"
+#include "ardour/stripable.h"
+#include "ardour/presentation_info.h"
 #include "ardour/tempo.h"
 #include "ardour/utils.h"
 #include "ardour/vca_manager.h"
@@ -5104,9 +5108,9 @@ Editor::redisplay_track_views ()
 
 	track_views.sort (TrackViewStripableSorter ());
 
-	if (track_drag) { //  && track_drag->spacer) {
-		maybe_move_tracks ();
-	}
+	/* OXFORD : plus de réordonnancement "à bump" pendant le geste — le glisser
+	 * affiche un trait d'insertion et applique l'ordre au relâchement
+	 * (cf. mid_track_drag / end_track_drag / apply_track_drag). */
 
 	/* n will be the count of tracks plus children (updated by TimeAxisView::show_at),
 	 * so we will use that to know where to put things.
@@ -5748,6 +5752,9 @@ Editor::start_track_drag (TimeAxisView& tav, int y, Gtk::Widget& w, bool can_cha
 	track_drag->start = yo;
 }
 
+/* OXFORD — glisser d'en-tête refondu : plus de "bump" (réordonnancement pas à
+ * pas pendant le geste, sans repère). On affiche un TRAIT D'INSERTION ambre qui
+ * suit la souris et l'ordre n'est appliqué qu'AU RELÂCHEMENT, en une fois. */
 void
 Editor::mid_track_drag (GdkEventMotion* ev, Gtk::Widget& w)
 {
@@ -5778,23 +5785,48 @@ Editor::mid_track_drag (GdkEventMotion* ev, Gtk::Widget& w)
 
 	track_drag->current = yo;
 
-	if (track_drag->current > track_drag->previous) {
-		if (track_drag->direction != 1) {
-			track_drag->bump_track = nullptr;
-			track_drag->direction = 1;
+	/* rang d'insertion = première piste visible dont le MILIEU est sous le
+	 * pointeur ; sinon, tout en bas. */
+	int    target  = -1;
+	double markerY = 0;
+	int    n       = 0;
+	double bottom  = 0;
+
+	for (auto & tv : track_views) {
+		if (!tv->marked_for_display()) {
+			continue;
 		}
-	} else if (track_drag->current < track_drag->previous) {
-		if (track_drag->direction != -1) {
-			track_drag->bump_track = nullptr;
-			track_drag->direction = -1;
+		const double top = tv->y_position();
+		const double hgt = tv->effective_height();
+		bottom = top + hgt;
+		if (target < 0 && yo < top + hgt / 2.0) {
+			target  = n;
+			markerY = top;
 		}
+		++n;
+	}
+	if (target < 0) {
+		target  = n;
+		markerY = bottom;
 	}
 
-	if (track_drag->current == track_drag->previous) {
-		return;
-	}
+	track_drag->target = target;
 
-	redisplay_track_views ();
+	/* trait d'insertion (ambre OXF-R3) posé dans le Gtk::Layout des en-têtes ;
+	 * edit_controls_vbox est en (0,0) du layout -> mêmes coordonnées. */
+	const int mh = std::max (2, (int) (3 * UIConfiguration::instance().get_ui_scale()));
+	const int mw = std::max (40, edit_controls_vbox.get_width());
+	_track_drop_marker.set_size_request (mw, mh);
+	if (!_track_drop_marker.get_parent()) {
+		Gdk::Color c;
+		c.set ("#d49d2b");
+		_track_drop_marker.modify_bg (Gtk::STATE_NORMAL, c);
+		controls_layout.put (_track_drop_marker, 0, (int) markerY - mh / 2);
+	} else {
+		controls_layout.move (_track_drop_marker, 0, (int) markerY - mh / 2);
+	}
+	_track_drop_marker.show ();
+
 	track_drag->previous = yo;
 }
 
@@ -5809,9 +5841,121 @@ Editor::end_track_drag ()
 		gdk_window_set_cursor (edit_controls_vbox.get_toplevel()->get_window()->gobj(), track_drag->predrag_cursor);
 	}
 
+	if (_track_drop_marker.get_parent()) {
+		_track_drop_marker.hide ();
+		controls_layout.remove (_track_drop_marker);
+	}
+
+	if (!track_drag->first_move && track_drag->target >= 0) {
+		apply_track_drag (track_drag->track, track_drag->target);
+	}
+
 	DEBUG_TRACE (DEBUG::TrackDrag, string_compose ("ending track drag with %1\n", track_drag));
 	delete track_drag;
 	track_drag = nullptr;
+}
+
+/* Applique le déplacement : la piste glissée (et, si elle fait partie de la
+ * sélection, toutes les pistes sélectionnées) est insérée au rang 'target' des
+ * pistes visibles. On renumérote ensuite TOUS les stripables (même chemin que
+ * la liste Pistes/Bus), ce qui garde éditeur et mixeur synchronisés. */
+void
+Editor::apply_track_drag (TimeAxisView* dragged, int target)
+{
+	if (!_session || _session->deletion_in_progress() || !dragged) {
+		return;
+	}
+
+	std::vector<TimeAxisView*> vis;
+	for (auto & tv : track_views) {
+		if (tv->marked_for_display()) {
+			vis.push_back (tv);
+		}
+	}
+	if (vis.empty()) {
+		return;
+	}
+
+	/* bloc déplacé : la piste glissée, plus le reste de la sélection si elle
+	 * en fait partie (comportement attendu d'une console). */
+	const bool with_selection = dragged->selected ();
+	std::set<std::shared_ptr<ARDOUR::Stripable> > moving;
+	for (std::vector<TimeAxisView*>::iterator i = vis.begin(); i != vis.end(); ++i) {
+		StripableTimeAxisView* stv = dynamic_cast<StripableTimeAxisView*> (*i);
+		if (!stv || !stv->stripable()) {
+			continue;
+		}
+		if (*i == dragged || (with_selection && (*i)->selected())) {
+			moving.insert (stv->stripable());
+		}
+	}
+	if (moving.empty()) {
+		return;
+	}
+
+	/* ancre : première piste visible NON déplacée à partir du rang visé ;
+	 * à défaut, dernière piste non déplacée AVANT ce rang. */
+	std::shared_ptr<ARDOUR::Stripable> anchor;
+	bool before = true;
+	for (int i = target; i < (int) vis.size(); ++i) {
+		StripableTimeAxisView* stv = dynamic_cast<StripableTimeAxisView*> (vis[i]);
+		if (stv && stv->stripable() && !moving.count (stv->stripable())) {
+			anchor = stv->stripable();
+			break;
+		}
+	}
+	if (!anchor) {
+		before = false;
+		for (int i = std::min (target, (int) vis.size()) - 1; i >= 0; --i) {
+			StripableTimeAxisView* stv = dynamic_cast<StripableTimeAxisView*> (vis[i]);
+			if (stv && stv->stripable() && !moving.count (stv->stripable())) {
+				anchor = stv->stripable();
+				break;
+			}
+		}
+	}
+	if (!anchor) {
+		return;   /* tout est déplacé : rien à faire */
+	}
+
+	ARDOUR::StripableList sl;
+	_session->get_stripables (sl);
+	sl.sort (ARDOUR::Stripable::Sorter());
+
+	std::vector<std::shared_ptr<ARDOUR::Stripable> > all (sl.begin(), sl.end());
+	std::vector<std::shared_ptr<ARDOUR::Stripable> > block;
+	for (size_t i = 0; i < all.size(); ++i) {
+		if (moving.count (all[i])) {
+			block.push_back (all[i]);   /* ordre relatif conservé */
+		}
+	}
+	if (block.empty()) {
+		return;
+	}
+
+	std::vector<std::shared_ptr<ARDOUR::Stripable> > out;
+	out.reserve (all.size());
+	for (size_t i = 0; i < all.size(); ++i) {
+		if (moving.count (all[i])) {
+			continue;
+		}
+		if (all[i] == anchor && before) {
+			out.insert (out.end(), block.begin(), block.end());
+		}
+		out.push_back (all[i]);
+		if (all[i] == anchor && !before) {
+			out.insert (out.end(), block.begin(), block.end());
+		}
+	}
+	if (out.size() != all.size()) {
+		return;   /* ceinture */
+	}
+
+	ARDOUR::PresentationInfo::ChangeSuspender cs;
+	ARDOUR::PresentationInfo::order_t order = 0;
+	for (size_t i = 0; i < out.size(); ++i) {
+		out[i]->set_presentation_order (order++);
+	}
 }
 
 bool

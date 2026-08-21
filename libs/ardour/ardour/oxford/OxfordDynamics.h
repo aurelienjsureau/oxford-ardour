@@ -39,6 +39,8 @@ public:
         envGate = envExp = envComp = envLim = -120.0;
         gateOpen = false;
         compHoldCnt = limHoldCnt = 0;
+        meterIn = -120.0;
+        meterStep = 20.0 / (0.4 * sampleRate);   // afficheur : -20 dB en 400 ms
         recalcAll();
     }
 
@@ -106,6 +108,9 @@ public:
     double gateReductionDb() const { return -gGate; }
     double expReductionDb()  const { return -gExp;  }
     double gateGainDb()      const { return  gGate; }
+    // Niveau du sidechain (dB) avec maintien de crête + retombée lente : sert au
+    // POINT MOBILE posé sur la courbe de transfert du panneau (où est le signal).
+    double inputLevelDb()    const { return meterIn; }
 
     // true si au moins une section travaille (early-out sinon : la dynamique
     // coûte un log10 + un pow PAR ÉCHANTILLON même à vide, x N pistes)
@@ -115,6 +120,7 @@ public:
     {
         if (!gateOn && !expOn && !compOn && !limOn && lookSamps == 0) {
             gGate = gExp = gComp = gLim = 0.0; compHoldCnt = limHoldCnt = 0;
+            meterIn = -120.0;
             return x;   // passthrough exact (look-ahead 0 : aucun retard à préserver)
         }
         // sidechain auto (mono / non lié) : niveau du canal lui-même
@@ -128,8 +134,12 @@ public:
     {
         if (!gateOn && !expOn && !compOn && !limOn && lookSamps == 0) {
             gGate = gExp = gComp = gLim = 0.0; compHoldCnt = limHoldCnt = 0;
+            meterIn = -120.0;
             return x;
         }
+        // afficheur de niveau d'entrée (crête + retombée lente) — GUI seulement
+        if (levelDb > meterIn) meterIn = levelDb;
+        else { meterIn -= meterStep; if (meterIn < -120.0) meterIn = -120.0; }
         // --- look-ahead : on écrit x, on lit le signal retardé ---
         delay[(size_t)writePos] = x;
         const int rp = (writePos - lookSamps + kMaxDelay) % kMaxDelay;
@@ -267,4 +277,7 @@ private:
     // gains courants (dB, <=0) + enveloppes
     double gGate { 0 }, gExp { 0 }, gComp { 0 }, gLim { 0 };
     double envGate { -120 }, envExp { -120 }, envComp { -120 }, envLim { -120 };
+
+    // afficheur de niveau d'entrée (GUI) : crête + retombée linéaire en dB
+    double meterIn { -120.0 }, meterStep { 0.001 };
 };

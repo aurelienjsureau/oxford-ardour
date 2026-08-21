@@ -21,6 +21,7 @@
 #include "pbd/search_path.h"
 
 #include "ardour/filesystem_paths.h"
+#include "ardour/rc_configuration.h"
 #include "ardour/route.h"
 #include "ardour/oxford_channel.h"
 
@@ -243,18 +244,18 @@ OxfordConsolePanel::OxfordConsolePanel ()
 	navb->set_homogeneous (true);   // EQ / DYNAMICS largeur égale
 	_btn_eq.set_text (_("EQ"));
 	_btn_dyn.set_text (_("DYN"));
-	_btn_color.set_text (_("COLOR"));
-	_btn_eq.set_fixed_colors    (0x9aa5b0ff, 0x454a52ff);   // actif gris clair / inactif gris
-	_btn_dyn.set_fixed_colors   (0x9aa5b0ff, 0x454a52ff);
-	_btn_color.set_fixed_colors (0x9aa5b0ff, 0x454a52ff);
+	_btn_master.set_text (_("MASTER"));
+	_btn_eq.set_fixed_colors     (0x9aa5b0ff, 0x454a52ff);   // actif gris clair / inactif gris
+	_btn_dyn.set_fixed_colors    (0x9aa5b0ff, 0x454a52ff);
+	_btn_master.set_fixed_colors (0x9aa5b0ff, 0x454a52ff);
 	{ Pango::FontDescription nf ("ArdourSans bold 10");
-	  _btn_eq.set_layout_font (nf); _btn_dyn.set_layout_font (nf); _btn_color.set_layout_font (nf); }
-	_btn_eq.signal_clicked.connect    (sigc::bind (sigc::mem_fun (*this, &OxfordConsolePanel::show_view), 0));
-	_btn_dyn.signal_clicked.connect   (sigc::bind (sigc::mem_fun (*this, &OxfordConsolePanel::show_view), 1));
-	_btn_color.signal_clicked.connect (sigc::bind (sigc::mem_fun (*this, &OxfordConsolePanel::show_view), 2));
+	  _btn_eq.set_layout_font (nf); _btn_dyn.set_layout_font (nf); _btn_master.set_layout_font (nf); }
+	_btn_eq.signal_clicked.connect     (sigc::bind (sigc::mem_fun (*this, &OxfordConsolePanel::show_view), 0));
+	_btn_dyn.signal_clicked.connect    (sigc::bind (sigc::mem_fun (*this, &OxfordConsolePanel::show_view), 1));
+	_btn_master.signal_clicked.connect (sigc::bind (sigc::mem_fun (*this, &OxfordConsolePanel::show_view), 2));
 	navb->pack_start (_btn_eq, true, true);
 	navb->pack_start (_btn_dyn, true, true);
-	navb->pack_start (_btn_color, true, true);
+	navb->pack_start (_btn_master, true, true);
 	_box.pack_start (*navb, Gtk::PACK_SHRINK);
 
 	_nb.set_show_tabs (false);
@@ -263,7 +264,7 @@ OxfordConsolePanel::OxfordConsolePanel ()
 	_chromeMain.push_back (&_nb);
 	_nb.append_page (*wrap_scroll (build_eq ()));
 	_nb.append_page (*wrap_scroll (build_dyn ()));
-	_nb.append_page (*wrap_scroll (build_color ()));
+	_nb.append_page (*wrap_scroll (build_master ()));
 	_box.pack_start (_nb, Gtk::PACK_EXPAND_WIDGET);
 
 	show_view (0);
@@ -651,22 +652,23 @@ OxfordConsolePanel::build_dyn ()
 }
 
 Gtk::Widget*
-OxfordConsolePanel::build_color ()
+OxfordConsolePanel::build_master ()
 {
-	/* Vue COLOR (par piste) : TAPE 3348 (étape d'enregistrement, en tête de chaîne)
-	 * + WARMTH (saturation douce de fin de voie). Les deux OFF par défaut. */
+	/* Vue MASTER — le panneau EQ/DYN ne sert à rien sur le master : on y met la
+	 * RÉGIE. Contenu : section MONITOR d'Ardour (réimplantée ici depuis le bord
+	 * du mixer) + trims du PCM-1630 + limiteur de sortie POST PCM-1630. */
 	Gtk::VBox* b = Gtk::manage (new Gtk::VBox ());
 	b->set_spacing (1);
 
-	/* mêmes helpers visuels que la vue Dynamics (barre de titre sombre + rangées de 3) */
+	/* mêmes helpers visuels que la vue Dynamics (barre de titre + rangées de 3) */
 	auto flow = [&](Gtk::VBox* col, std::vector<TridentKnob*> ks) {
 		Gtk::HBox* r=0; int n=0;
 		for (auto k : ks) { if (n%3==0){ r=Gtk::manage(new Gtk::HBox()); r->set_spacing(2); col->pack_start(*r,Gtk::PACK_SHRINK);} r->pack_start(*k,true,false); ++n; }
 	};
+	/* en-tête de section ; toggle optionnel (son/gon nuls = pas de bouton On) */
 	auto section = [&](const char* name, const char* color,
 	                   std::function<void(OxfordChannel&,bool)> son,
-	                   std::function<bool(OxfordChannel&)> gon,
-	                   bool trackOnly) -> Gtk::VBox* {
+	                   std::function<bool(OxfordChannel&)> gon) -> Gtk::VBox* {
 		Gtk::Label* gap = Gtk::manage (new Gtk::Label ()); gap->set_size_request (1, 6);
 		b->pack_start (*gap, Gtk::PACK_SHRINK);
 		Gtk::EventBox* bar = Gtk::manage (new Gtk::EventBox ());
@@ -677,49 +679,56 @@ OxfordConsolePanel::build_color ()
 		char m[96]; std::snprintf (m,sizeof m,"<b><span size=\"large\" foreground=\"%s\">%s</span></b>",color,name);
 		l->set_markup (m); l->set_alignment (0,0.5);
 		hd->pack_start (*l, true, true);
-		mkToggle (*hd, _("On"), false, son, gon, "#1a2433");
+		if (son && gon) { mkToggle (*hd, _("On"), true, son, gon, "#1a2433"); }
 		bar->add (*hd);
 		b->pack_start (*bar, Gtk::PACK_SHRINK);
 		Gtk::VBox* col = Gtk::manage (new Gtk::VBox ()); col->set_spacing (1);
-		Gtk::Widget* sp = subpanel (col);
-		b->pack_start (*sp, Gtk::PACK_SHRINK);
-		if (trackOnly) { reg_track_only (b, gap); reg_track_only (b, bar); reg_track_only (b, sp); }
+		b->pack_start (*subpanel (col), Gtk::PACK_SHRINK);
 		return col;
 	};
 
-	/* TAPE 3348 — convertisseurs AD du magnéto d'ENREGISTREMENT (en tête de chaîne).
-	 * Un RETURN ne passe pas par le magnéto -> masqué pour les bus. */
-	{ Gtk::VBox* c = section (_("TAPE 3348"), "#9a5a1c", [](OxfordChannel& c,bool v){c.setTapeOn(v);}, [](OxfordChannel& c){return c.tapeOn();}, true);
-	  flow (c, {
-	    mk(0,1,0.3,_("Drive"),f_rat,false,-1,[](OxfordChannel& c,double v){c.setTapeDrive((float)v);},[](OxfordChannel& c){return (double)c.tapeDrive();}, 0.80,0.56,0.28),
-	    mk(-1,1,0,_("Emph"),f_rat,false,-1,[](OxfordChannel& c,double v){c.setTapeEmphasis((float)v);},[](OxfordChannel& c){return (double)c.tapeEmphasis();}, 0.80,0.56,0.28),
-	    mk(0,1,0.3,_("Grain"),f_rat,false,-1,[](OxfordChannel& c,double v){c.setTapeGrain((float)v);},[](OxfordChannel& c){return (double)c.tapeGrain();}, 0.80,0.56,0.28) }); }
-
-	/* WARMTH — saturation douce de fin de voie (Amount %, Trim dB) */
-	{ Gtk::VBox* c = section (_("WARMTH"), "#a8661c", [](OxfordChannel& c,bool v){c.setWarmthOn(v);}, [](OxfordChannel& c){return c.warmthOn();}, false);
-	  flow (c, {
-	    mk(0,100,50,_("Amount"),f_ms,false,-1,[](OxfordChannel& c,double v){c.setWarmthAmount((float)v);},[](OxfordChannel& c){return (double)c.warmthAmount();}, 0.82,0.52,0.30),
-	    mk(-12,12,0,_("Trim"),f_db,false,-1,[](OxfordChannel& c,double v){c.setWarmthTrimDb((float)v);},[](OxfordChannel& c){return (double)c.warmthTrimDb();}, 0.82,0.52,0.30) }); }
-
-	/* PCM-1630 · MASTER — trims autour du réseau NAM (capture non-linéaire) :
-	 * "In" recule l'attaque du modèle (désature), "Out" compense le niveau.
-	 * Agit sur le MASTER quelle que soit la piste sélectionnée. */
+	/* ---- MONITOR : emplacement d'accueil du tearoff de MonitorSection ---- */
 	{
-		Gtk::Label* gap = Gtk::manage (new Gtk::Label ()); gap->set_size_request (1, 6);
-		b->pack_start (*gap, Gtk::PACK_SHRINK);
-		Gtk::EventBox* bar = Gtk::manage (new Gtk::EventBox ());
-		Gdk::Color barbg; barbg.set_rgb_p (kSubBg[0], kSubBg[1], kSubBg[2]); bar->modify_bg (Gtk::STATE_NORMAL, barbg); _chromeSub.push_back (bar);
-		bar->set_border_width (3);
-		Gtk::Label* l = Gtk::manage (new Gtk::Label ());
-		l->set_markup ("<b><span size=\"large\" foreground=\"#3a5a8c\">PCM-1630 · MASTER</span></b>");
-		l->set_alignment (0, 0.5);
-		bar->add (*l);
-		b->pack_start (*bar, Gtk::PACK_SHRINK);
-		Gtk::VBox* c = Gtk::manage (new Gtk::VBox ()); c->set_spacing (1);
-		b->pack_start (*subpanel (c), Gtk::PACK_SHRINK);
+		Gtk::VBox* c = section (_("MONITOR"), "#3a5a8c", nullptr, nullptr);
+		_mon_note.set_markup (_("<i>Pas de bus Monitor dans cette session.</i>"));
+		_mon_note.set_line_wrap (true);
+		_mon_note.set_alignment (0.0, 0.5);
+		c->pack_start (_mon_note, Gtk::PACK_SHRINK);
+		_mon_create_btn.set_text (_("Créer le bus Monitor"));
+		_mon_create_btn.set_fixed_colors (0xc8e030ff, 0xc8c4b8ff);
+		_mon_create_btn.set_layout_font (Pango::FontDescription ("ArdourSans 9"));
+		_mon_create_btn.signal_clicked.connect ([] () {
+			/* déclenche Session::config_changed("use-monitor-bus") -> bus créé */
+			ARDOUR::Config->set_use_monitor_bus (true);
+		});
+		c->pack_start (_mon_create_btn, Gtk::PACK_SHRINK);
+		c->pack_start (_mon_slot, Gtk::PACK_SHRINK);
+	}
+
+	/* ---- PCM-1630 : trims autour du réseau NAM (capture non-linéaire) ----
+	 * "In" recule l'attaque du modèle (désature), "Out" compense le niveau. */
+	{
+		Gtk::VBox* c = section (_("PCM-1630"), "#3a5a8c", nullptr, nullptr);
 		flow (c, {
 		  mk(-24,24,0,_("In"),f_db,true,-1,[](OxfordChannel& ch,double v){ch.setMtInDb((float)v);},[](OxfordChannel& ch){return (double)ch.mtInDb();}, 0.35,0.48,0.66),
 		  mk(-24,24,0,_("Out"),f_db,true,-1,[](OxfordChannel& ch,double v){ch.setMtOutDb((float)v);},[](OxfordChannel& ch){return (double)ch.mtOutDb();}, 0.35,0.48,0.66) });
+	}
+
+	/* ---- LIMITEUR DE SORTIE, placé APRÈS le PCM-1630 ----
+	 * le modèle NAM restitue les crêtes du convertisseur du 1630 : c'est le seul
+	 * point de la chaîne où on peut les rattraper. Des plugins peuvent aussi être
+	 * insérés après le PCM-1630 dans la processor-box du master. */
+	{
+		Gtk::VBox* c = section (_("OUT LIMITER"), "#c62828",
+		    [](OxfordChannel& ch,bool v){ch.setBusLimOn(v);},
+		    [](OxfordChannel& ch){return ch.busLimOn();});
+		flow (c, {
+		  mk(-12,0,-0.3,_("Ceil"),f_db,true,-1,
+		     [](OxfordChannel& ch,double v){ch.setBusLimCeilDb((float)v);},
+		     [](OxfordChannel& ch){return (double)ch.busLimCeilDb();}, 0.78,0.30,0.28) });
+		_pcmlim_gr.set_markup (_("<span size=\"small\">GR —</span>"));
+		_pcmlim_gr.set_alignment (0.0, 0.5);
+		c->pack_start (_pcmlim_gr, Gtk::PACK_SHRINK);
 	}
 
 	Gtk::Label* botpad = Gtk::manage (new Gtk::Label ()); botpad->set_size_request (1, 10);
@@ -728,12 +737,30 @@ OxfordConsolePanel::build_color ()
 }
 
 void
+OxfordConsolePanel::set_monitor_widget (Gtk::Widget* w)
+{
+	if (_mon_widget == w) { return; }
+	if (_mon_widget) { _mon_slot.remove (*_mon_widget); }
+	_mon_widget = w;
+	if (_mon_widget) {
+		_mon_slot.pack_start (*_mon_widget, Gtk::PACK_SHRINK);
+		_mon_widget->show ();
+		_mon_note.hide ();
+		_mon_create_btn.hide ();
+	} else {
+		_mon_note.show ();
+		_mon_create_btn.show ();
+	}
+}
+
+void
 OxfordConsolePanel::show_view (int page)
 {
 	_nb.set_current_page (page);
-	_btn_eq.set_active_state    (page==0 ? Gtkmm2ext::ExplicitActive : Gtkmm2ext::Off);
-	_btn_dyn.set_active_state   (page==1 ? Gtkmm2ext::ExplicitActive : Gtkmm2ext::Off);
-	_btn_color.set_active_state (page==2 ? Gtkmm2ext::ExplicitActive : Gtkmm2ext::Off);
+	_btn_eq.set_active_state     (page==0 ? Gtkmm2ext::ExplicitActive : Gtkmm2ext::Off);
+	_btn_dyn.set_active_state    (page==1 ? Gtkmm2ext::ExplicitActive : Gtkmm2ext::Off);
+	_btn_master.set_active_state (page==2 ? Gtkmm2ext::ExplicitActive : Gtkmm2ext::Off);
+	if (page != 2) { _lastTrackPage = page; }   // page à restaurer en quittant le master
 }
 
 bool
@@ -799,6 +826,20 @@ OxfordConsolePanel::refresh ()
 {
 	_chan   = selected_channel ();
 	_master = master_channel ();
+
+	/* MASTER sélectionné -> le panneau bascule sur la vue régie (monitor +
+	 * PCM-1630 + limiteur de sortie) ; retour piste -> on restaure la vue. */
+	bool msel = false;
+	if (Mixer_UI* mx = Mixer_UI::instance ()) {
+		for (MixerStrip* s : mx->mixer_strips ()) {
+			std::shared_ptr<ARDOUR::Route> r = s->route ();
+			if (r && r->is_master () && r->is_selected ()) { msel = true; break; }
+		}
+	}
+	if (msel != _masterSelected) {
+		_masterSelected = msel;
+		show_view (msel ? 2 : _lastTrackPage);
+	}
 
 	/* mode RETURN : un bus n'expose que LF/MF/HF + Gate/Comp (spec OXF-R3) */
 	const bool isBus = _chan && _chan->kind () == OxfordChannel::Bus;
@@ -873,6 +914,14 @@ OxfordConsolePanel::refresh ()
 		_grPeak[i] = std::max (_grVals[i], _grPeak[i] - 0.6f);
 	}
 	_dyn_meters.queue_draw ();
+	/* réduction du limiteur de sortie (après PCM-1630) */
+	{
+		char t[48];
+		const float g = _master ? _master->limiterGrDb () : 0.f;
+		if (g > 0.05f) { std::snprintf (t, sizeof t, "<span size=\"small\">GR %.1f dB</span>", g); }
+		else           { std::snprintf (t, sizeof t, "<span size=\"small\">GR —</span>"); }
+		_pcmlim_gr.set_markup (t);
+	}
 	_updating = false;
 	_eq_curve.queue_draw ();
 	_dyn_curve.queue_draw ();
@@ -1200,7 +1249,10 @@ OxfordConsolePanel::on_eq_scroll (GdkEventScroll* ev)
 	return true;
 }
 
-/* Graphe Dynamics ORIGINAL : transfert IN/OUT compresseur + 1:1 + GR. */
+/* Graphe Dynamics : courbe de transfert IN/OUT des QUATRE sections (Gate,
+ * Expander, Compresseur, Limiteur) reconstituée avec les MÊMES lois que le DSP,
+ * + un POINT MOBILE posé sur la courbe à la position du signal (niveau du
+ * détecteur -> sortie correspondante). Échelle -80..0 dB (le Gate descend à -80). */
 bool
 OxfordConsolePanel::on_dyn_expose (GdkEventExpose*)
 {
@@ -1210,51 +1262,126 @@ OxfordConsolePanel::on_dyn_expose (GdkEventExpose*)
 	Gtk::Allocation a = _dyn_curve.get_allocation ();
 	const double w = a.get_width (), h = a.get_height ();
 	screen_begin (cr, w, h);
-	auto X=[&](double din){ return w*(din+60.0)/60.0; };
-	auto Y=[&](double dout){ return h*(1.0-(dout+60.0)/60.0); };
+	const double LO = -80.0;                                   // bas d'échelle des 2 axes
+	auto X=[&](double din){ return w*(din-LO)/(-LO); };
+	auto Y=[&](double dout){ return h*(1.0-(dout-LO)/(-LO)); };
 	cr->set_line_width (1.0); cr->set_source_rgba (0.30,0.44,0.72,0.30);
-	for (int d=-50; d<=0; d+=10){ double x=X(d),y=Y(d); cr->move_to(x,0);cr->line_to(x,h); cr->move_to(0,y);cr->line_to(w,y);} cr->stroke();
+	for (int d=-70; d<=0; d+=10){ double x=X(d),y=Y(d); cr->move_to(x,0);cr->line_to(x,h); cr->move_to(0,y);cr->line_to(w,y);} cr->stroke();
 	/* labels d'axes */
 	cr->select_font_face ("ArdourSans", Cairo::FONT_SLANT_NORMAL, Cairo::FONT_WEIGHT_NORMAL);
 	cr->set_font_size (8.5);
 	cr->set_source_rgba (0.62,0.72,0.92,0.65);
+	cr->move_to (X(-60)+2, h-6);  cr->show_text ("-60");
 	cr->move_to (X(-40)+2, h-6);  cr->show_text ("-40");
 	cr->move_to (X(-20)+2, h-6);  cr->show_text ("-20");
 	cr->move_to (4, Y(-20)-3);    cr->show_text ("-20");
 	cr->move_to (4, Y(-40)-3);    cr->show_text ("-40");
+	cr->move_to (4, Y(-60)-3);    cr->show_text ("-60");
 	/* diagonale 1:1 de référence */
-	cr->set_source_rgba (1,1,1,0.22); cr->move_to(X(-60),Y(-60)); cr->line_to(X(0),Y(0)); cr->stroke();
+	cr->set_source_rgba (1,1,1,0.22); cr->move_to(X(LO),Y(LO)); cr->line_to(X(0),Y(0)); cr->stroke();
+
 	auto ratio_of=[](double c){ if(c<=0.5)return 1.0+(c/0.5); if(c<=0.75)return 2.0+((c-0.5)/0.25)*2.0; double t=(c-0.75)/0.25; return 4.0/std::max(1e-3,1.0-t); };
-	if (_chan && _chan->compOn ()){
-		const double thr=_chan->compThreshDb(), R=ratio_of(_chan->compRatioCtrl()), mk=_chan->compMakeupDb(), knee=_chan->compSoftDb();
+
+	const bool gOn = _chan && _chan->gateOn ();
+	const bool eOn = _chan && _chan->expOn ();
+	const bool cOn = _chan && _chan->compOn ();
+	const bool lOn = _chan && _chan->limOn ();
+
+	if (_chan && (gOn || eOn || cOn || lOn)) {
+
+		/* mêmes formules que OxfordDynamics::processSample (régime établi :
+		 * enveloppes au repos, hystérésis du gate ignorée) */
+		OxfordChannel& c = *_chan;
+		const double gThr = c.gateThreshDb (), gRng = -std::fabs (c.gateRangeDb ());
+		const double eThr = c.expThreshDb (),  eRat = c.expRatio (), eRng = -std::fabs (c.expRangeDb ());
+		const double cThr = c.compThreshDb (), cR = ratio_of (c.compRatioCtrl ());
+		const double cMk  = c.compMakeupDb (), cKnee = (c.compSoftDb () > 0.0 ? c.compSoftDb () : 3.0);
+		const double lThr = c.limThreshDb ();
+
+		auto transfer = [&](double din) {
+			double gg = 0.0, ge = 0.0, gc = 0.0, gl = 0.0;
+			if (gOn && din < gThr)  { gg = gRng; }
+			if (eOn && din < eThr)  { ge = std::max (eRng, (din - eThr) * (eRat - 1.0)); }
+			if (cOn) {
+				const double over = din - cThr, slope = 1.0 - 1.0 / cR;
+				double red;
+				if      (over <= -cKnee * 0.5) { red = 0.0; }
+				else if (over >=  cKnee * 0.5) { red = over * slope; }
+				else { const double t = over + cKnee * 0.5; red = (t * t / (2.0 * cKnee)) * slope; }
+				gc = -red;
+			}
+			const double mk = cOn ? cMk : 0.0;
+			if (lOn) { const double o = din + gg + ge + gc + mk - lThr; gl = o > 0.0 ? -o : 0.0; }
+			return din + gg + ge + gc + mk + gl;
+		};
+
 		const int N=(int)w;
 		std::vector<double> tr ((size_t)(N+1), 0.0);
 		for (int i=0;i<=N;++i){
-			double din=-60.0+60.0*i/w; double dout;
-			if (knee>0.0 && din>thr-knee*0.5 && din<thr+knee*0.5){   // genou doux (transition quadratique)
-				double x=din-(thr-knee*0.5); dout=din+(1.0/R-1.0)*x*x/(2.0*knee);
-			} else if (din<=thr){ dout=din; }
-			else { dout=thr+(din-thr)/R; }
-			dout+=mk; if(dout>0)dout=0;
+			double dout = transfer (LO + (-LO) * i / (w > 0 ? w : 1));
+			if (dout < LO - 20.0) { dout = LO - 20.0; }   // le gate plonge : on laisse sortir du cadre
+			if (dout > 0.0) { dout = 0.0; }
 			tr[(size_t)i]=dout;
 		}
-		/* aire de réduction : entre la diagonale 1:1 et la courbe de transfert */
+		/* aire entre la diagonale 1:1 et la courbe (réduction/expansion) */
 		cr->move_to (0, Y(tr[0]));
 		for (int i=1;i<=N;++i) cr->line_to ((double)i, Y(tr[(size_t)i]));
-		cr->line_to (X(0), Y(0)); cr->line_to (X(-60), Y(-60)); cr->close_path ();
+		cr->line_to (X(0), Y(0)); cr->line_to (X(LO), Y(LO)); cr->close_path ();
 		cr->set_source_rgba (0.941,0.659,0.188,0.12); cr->fill ();
-		/* marqueur de seuil (pointillé vertical) */
-		cr->set_source_rgba (1,1,1,0.30); cr->set_line_width (1.0);
-		{ std::vector<double> dash (1, 3.0); cr->set_dash (dash, 0.0); }
-		cr->move_to (X(thr), 0); cr->line_to (X(thr), h); cr->stroke ();
-		cr->unset_dash ();
-		cr->set_source_rgba (1,1,1,0.55); cr->move_to (X(thr)+3, 12); cr->show_text ("THR");
+
+		/* seuils : un pointillé vertical par section active, à sa couleur */
+		{
+			std::vector<double> dash (1, 3.0);
+			const struct { bool on; double thr; double r,g,b; const char* t; } TH[4] = {
+				{ gOn, gThr, 0.18,0.49,0.20, "G" },   // #2e7d32
+				{ eOn, eThr, 0.08,0.40,0.75, "E" },   // #1565c0
+				{ cOn, cThr, 0.72,0.53,0.04, "C" },   // #b8860b
+				{ lOn, lThr, 0.78,0.16,0.16, "L" } }; // #c62828
+			cr->set_line_width (1.0);
+			cr->select_font_face ("ArdourSans", Cairo::FONT_SLANT_NORMAL, Cairo::FONT_WEIGHT_BOLD);
+			cr->set_font_size (9.0);
+			for (int i = 0; i < 4; ++i) {
+				if (!TH[i].on) { continue; }
+				const double x = X (std::max (LO, TH[i].thr));
+				cr->set_dash (dash, 0.0);
+				cr->set_source_rgba (TH[i].r, TH[i].g, TH[i].b, 0.75);
+				cr->move_to (x, 0); cr->line_to (x, h); cr->stroke ();
+				cr->unset_dash ();
+				cr->move_to (x + 2, 10 + i * 10); cr->show_text (TH[i].t);
+			}
+		}
+
 		/* courbe : glow + trait */
 		cr->move_to (0, Y(tr[0]));
 		for (int i=1;i<=N;++i) cr->line_to ((double)i, Y(tr[(size_t)i]));
 		cr->set_source_rgba (0.941,0.659,0.188,0.20); cr->set_line_width (5.5); cr->stroke_preserve ();
 		cr->set_source_rgb (0.980,0.760,0.300); cr->set_line_width (2.0); cr->stroke ();
-		/* GR live en haut à droite */
+
+		/* POINT MOBILE : où se situe le signal sur la courbe */
+		const double lvl = (double) _chan->dynInputDb ();
+		if (lvl > LO - 0.5) {
+			const double din = std::min (0.0, lvl);
+			double dout = transfer (din); if (dout > 0.0) { dout = 0.0; }
+			const double px = X (din), py = Y (std::max (LO, dout));
+			/* projections discrètes vers les axes */
+			cr->set_line_width (1.0); cr->set_source_rgba (1,1,1,0.25);
+			cr->move_to (px, py); cr->line_to (px, h); cr->stroke ();
+			cr->move_to (px, py); cr->line_to (0, py);  cr->stroke ();
+			/* halo + pastille */
+			cr->set_source_rgba (0.98,0.85,0.45,0.28); cr->arc (px, py, 8.0, 0, 2*M_PI); cr->fill ();
+			cr->set_source_rgb  (1.0,0.97,0.80);       cr->arc (px, py, 3.6, 0, 2*M_PI); cr->fill ();
+			cr->set_source_rgba (0.20,0.14,0.03,0.85); cr->set_line_width (1.2);
+			cr->arc (px, py, 3.6, 0, 2*M_PI); cr->stroke ();
+			/* lecture chiffrée in -> out */
+			char t[48]; std::snprintf (t, sizeof t, "%.0f \xe2\x86\x92 %.0f dB", din, dout);
+			cr->select_font_face ("monospace", Cairo::FONT_SLANT_NORMAL, Cairo::FONT_WEIGHT_BOLD);
+			cr->set_font_size (9.5);
+			Cairo::TextExtents te; cr->get_text_extents (t, te);
+			cr->set_source_rgba (1.0,0.97,0.80,0.85);
+			cr->move_to (w - te.width - 8, h - 6); cr->show_text (t);
+		}
+
+		/* GR live en haut à droite (compresseur) */
 		if (_grVals[2] > 0.05f) {
 			char t[24]; std::snprintf (t, sizeof t, "GR %.1f dB", _grVals[2]);
 			cr->select_font_face ("monospace", Cairo::FONT_SLANT_NORMAL, Cairo::FONT_WEIGHT_BOLD);
@@ -1264,7 +1391,7 @@ OxfordConsolePanel::on_dyn_expose (GdkEventExpose*)
 			cr->move_to (w - te.width - 10, 15); cr->show_text (t);
 		}
 	} else {
-		cr->set_source_rgba(1,1,1,0.4); cr->select_font_face("ArdourSans",Cairo::FONT_SLANT_NORMAL,Cairo::FONT_WEIGHT_NORMAL); cr->set_font_size(11); cr->move_to(8,18); cr->show_text(_("Compressor off"));
+		cr->set_source_rgba(1,1,1,0.4); cr->select_font_face("ArdourSans",Cairo::FONT_SLANT_NORMAL,Cairo::FONT_WEIGHT_NORMAL); cr->set_font_size(11); cr->move_to(8,18); cr->show_text(_("Dynamics off"));
 	}
 	screen_glass (cr, w, h);
 	return true;

@@ -282,6 +282,15 @@ OxfordChannel::busLevel ()
 	return lv;
 }
 
+float
+OxfordChannel::dynInputDb ()
+{
+	/* niveau du détecteur (déjà lissé côté DSP) — -120 = section au repos */
+	float db = -120.f;
+	for (auto& s : _strips) { const float v = (float) s.dynamics ().inputLevelDb (); if (v > db) db = v; }
+	return db;
+}
+
 XMLNode&
 OxfordChannel::state () const
 {

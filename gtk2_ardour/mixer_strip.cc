@@ -399,6 +399,10 @@ MixerStrip::init ()
 
 	name_button.set_fallthrough_to_parent (true);
 	name_button.signal_button_press_event().connect (sigc::mem_fun(*this, &MixerStrip::name_button_button_press), false);
+	/* OXFORD : glisser le bouton de nom = déplacer la tranche dans le mixeur */
+	name_button.add_events (Gdk::POINTER_MOTION_MASK | Gdk::BUTTON1_MOTION_MASK);
+	name_button.signal_motion_notify_event().connect (sigc::mem_fun(*this, &MixerStrip::name_button_motion), false);
+	name_button.signal_button_release_event().connect (sigc::mem_fun(*this, &MixerStrip::name_button_button_release), false);
 
 	group_button.signal_button_press_event().connect (sigc::mem_fun(*this, &MixerStrip::select_route_group), false);
 
@@ -2079,6 +2083,10 @@ gboolean
 MixerStrip::name_button_button_press (GdkEventButton* ev)
 {
 	if (ev->button == 1 && ev->type == GDK_BUTTON_PRESS) {
+		/* OXFORD : on arme le glisser-déplacer (il ne démarre qu'au-delà du
+		 * seuil de mouvement, pour ne pas gêner le simple clic de sélection). */
+		_name_drag_x0 = ev->x_root;
+		_name_drag_armed = true;
 		/* fall thru to mixer */
 		return false;
 	}
@@ -2185,6 +2193,43 @@ MixerStrip::name_changed ()
 	} else {
 		number_label.set_text ("");
 	}
+}
+
+/* OXFORD : glisser-déplacer de tranche. Le seuil évite de transformer un clic
+ * de sélection en déplacement ; le relâchement applique l'ordre (Mixer_UI). */
+bool
+MixerStrip::name_button_motion (GdkEventMotion* ev)
+{
+	if (_mixer.strip_dragging ()) {
+		_mixer.mid_strip_drag ((int) ev->x_root);
+		gdk_event_request_motions (ev);
+		return true;
+	}
+
+	if (!_name_drag_armed || !(ev->state & GDK_BUTTON1_MASK)) {
+		return false;
+	}
+
+	const double thresh = 6.0 * UIConfiguration::instance().get_ui_scale ();
+	if (fabs (ev->x_root - _name_drag_x0) < thresh) {
+		return false;
+	}
+
+	_mixer.start_strip_drag (this);
+	_mixer.mid_strip_drag ((int) ev->x_root);
+	gdk_event_request_motions (ev);
+	return true;
+}
+
+gboolean
+MixerStrip::name_button_button_release (GdkEventButton* ev)
+{
+	_name_drag_armed = false;
+	if (ev->button == 1 && _mixer.strip_dragging ()) {
+		_mixer.end_strip_drag ();
+		return true;   /* pas de clic de sélection après un déplacement */
+	}
+	return false;
 }
 
 void

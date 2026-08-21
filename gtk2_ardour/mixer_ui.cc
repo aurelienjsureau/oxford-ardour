@@ -674,7 +674,13 @@ Mixer_UI::add_stripables (StripableList& slist)
 
 				if (route->is_monitor()) {
 
-					content_bus.add (_monitor_section.tearoff());
+					/* OXFORD : la régie vit dans la vue MASTER du panneau Oxford
+					 * (le panneau EQ/DYN ne sert à rien sur le master). */
+					if (_oxford_console) {
+						_oxford_console->set_monitor_widget (&_monitor_section.tearoff());
+					} else {
+						content_bus.add (_monitor_section.tearoff());
+					}
 					_monitor_section.set_session (_session);
 					_monitor_section.tearoff().show_all ();
 
@@ -1690,6 +1696,184 @@ Mixer_UI::track_list_reorder (const TreeModel::Path&, const TreeModel::iterator&
 {
 	DEBUG_TRACE (DEBUG::OrderKeys, "mixer UI treeview reordered\n");
 	sync_presentation_info_from_treeview ();
+}
+
+/* ------------------------------------------------------------------------
+ * OXFORD — déplacement d'une tranche par GLISSER (fenêtre Mix, façon Pro Tools)
+ *
+ * On attrape la tranche par son bouton de nom (MixerStrip). Pendant le glisser
+ * un trait ambre marque le point d'insertion ; l'ordre n'est appliqué qu'au
+ * relâchement, via le MÊME chemin qu'un DnD dans la liste Pistes/Bus
+ * (track_model->reorder -> sync_presentation_info_from_treeview).
+ * ------------------------------------------------------------------------ */
+
+void
+Mixer_UI::start_strip_drag (MixerStrip* s)
+{
+	if (_strip_drag || !s || !s->route ()) {
+		return;
+	}
+	if (s->route()->is_master() || s->route()->is_monitor()) {
+		return;
+	}
+
+	_strip_drag = s;
+	_strip_drop_index = -1;
+
+	Gdk::Color c;
+	c.set ("#d49d2b");   /* ambre OXF-R3 */
+	_strip_drop_marker.modify_bg (Gtk::STATE_NORMAL, c);
+	_strip_drop_marker.set_size_request (PX_SCALE (4), -1);
+
+	Glib::RefPtr<Gdk::Window> win = strip_packer.get_window ();
+	if (win) {
+		_strip_predrag_cursor = gdk_window_get_cursor (win->gobj());
+		win->set_cursor (Gdk::Cursor (Gdk::FLEUR));
+	}
+}
+
+void
+Mixer_UI::mid_strip_drag (int x_root)
+{
+	if (!_strip_drag) {
+		return;
+	}
+	Glib::RefPtr<Gdk::Window> win = strip_packer.get_window ();
+	if (!win) {
+		return;
+	}
+	int ox, oy;
+	win->get_origin (ox, oy);
+	const int mx = x_root - ox;
+
+	/* index d'insertion parmi les tranches affichées */
+	int idx  = 0;
+	int slot = 0;
+	std::vector<Gtk::Widget*> kids = strip_packer.get_children ();
+	for (std::vector<Gtk::Widget*>::iterator k = kids.begin(); k != kids.end(); ++k) {
+		MixerStrip* ms = dynamic_cast<MixerStrip*> (*k);
+		if (!ms) {
+			continue;
+		}
+		Gtk::Allocation a = ms->get_allocation ();
+		if (mx > a.get_x() + a.get_width() / 2) {
+			idx = slot + 1;
+		}
+		++slot;
+	}
+
+	if (idx == _strip_drop_index) {
+		return;
+	}
+	_strip_drop_index = idx;
+
+	/* (re)pose le trait d'insertion devant la idx-ième tranche */
+	if (_strip_drop_marker.get_parent()) {
+		strip_packer.remove (_strip_drop_marker);
+	}
+	kids = strip_packer.get_children ();
+	int raw = 0, seen = 0, last = -1;
+	bool found = false;
+	for (size_t i = 0; i < kids.size(); ++i) {
+		if (!dynamic_cast<MixerStrip*> (kids[i])) {
+			continue;
+		}
+		last = (int) i;
+		if (!found && seen == idx) {
+			raw = (int) i;
+			found = true;
+		}
+		++seen;
+	}
+	if (!found) {
+		raw = last + 1;   /* après la dernière tranche */
+	}
+	strip_packer.pack_start (_strip_drop_marker, false, false);
+	strip_packer.reorder_child (_strip_drop_marker, raw);
+	_strip_drop_marker.show ();
+}
+
+void
+Mixer_UI::end_strip_drag ()
+{
+	if (!_strip_drag) {
+		return;
+	}
+	MixerStrip* dragged = _strip_drag;
+	const int   target  = _strip_drop_index;
+	_strip_drag = 0;
+	_strip_drop_index = -1;
+
+	if (_strip_drop_marker.get_parent()) {
+		strip_packer.remove (_strip_drop_marker);
+	}
+	Glib::RefPtr<Gdk::Window> win = strip_packer.get_window ();
+	if (win) {
+		gdk_window_set_cursor (win->gobj(), _strip_predrag_cursor);
+	}
+	_strip_predrag_cursor = 0;
+
+	if (target < 0 || !_session || _session->deletion_in_progress()) {
+		return;
+	}
+
+	/* tranches dans l'ordre d'affichage */
+	std::vector<MixerStrip*> shown;
+	std::vector<Gtk::Widget*> kids = strip_packer.get_children ();
+	for (size_t i = 0; i < kids.size(); ++i) {
+		MixerStrip* ms = dynamic_cast<MixerStrip*> (kids[i]);
+		if (ms) {
+			shown.push_back (ms);
+		}
+	}
+	if (shown.empty()) {
+		return;
+	}
+
+	MixerStrip* anchor = 0;
+	bool before = true;
+	if (target < (int) shown.size()) {
+		anchor = shown[target];
+	} else {
+		anchor = shown.back ();
+		before = false;
+	}
+	if (!anchor || anchor == dragged) {
+		return;
+	}
+
+	/* lignes du modèle : on déplace la ligne de la tranche glissée juste
+	 * avant (ou après) celle de la tranche d'ancrage. */
+	int fromRow = -1, anchorRow = -1, total = 0;
+	TreeModel::Children rows = track_model->children ();
+	for (TreeModel::Children::iterator ri = rows.begin(); ri != rows.end(); ++ri, ++total) {
+		AxisView* av = (*ri)[stripable_columns.strip];
+		if (av == static_cast<AxisView*> (dragged)) { fromRow   = total; }
+		if (av == static_cast<AxisView*> (anchor))  { anchorRow = total; }
+	}
+	if (fromRow < 0 || anchorRow < 0 || fromRow == anchorRow) {
+		return;
+	}
+
+	std::vector<int> neworder;
+	neworder.reserve (total);
+	for (int i = 0; i < total; ++i) {
+		if (i == fromRow) {
+			continue;
+		}
+		if (i == anchorRow && before) {
+			neworder.push_back (fromRow);
+		}
+		neworder.push_back (i);
+		if (i == anchorRow && !before) {
+			neworder.push_back (fromRow);
+		}
+	}
+	if ((int) neworder.size() != total) {
+		return;   /* ceinture : jamais en pratique */
+	}
+
+	track_model->reorder (neworder);   /* -> track_list_reorder -> presentation info */
 }
 
 void
@@ -3125,7 +3309,11 @@ Mixer_UI::monitor_section_going_away ()
 	}
 
 	monitor_section_detached ();
-	content_bus.remove ();
+	if (_oxford_console) {
+		_oxford_console->set_monitor_widget (0);
+	} else {
+		content_bus.remove ();
+	}
 }
 
 void
@@ -3183,6 +3371,11 @@ Mixer_UI::monitor_section_attached ()
 {
 	Glib::RefPtr<ToggleAction> act = ActionManager::get_toggle_action ("Mixer", "ToggleMonitorSection");
 	act->set_sensitive (true);
+	/* OXFORD : la régie est hébergée par la vue MASTER du panneau (visible
+	 * seulement quand le master est sélectionné) -> on l'y montre d'office. */
+	if (_oxford_console && !act->get_active ()) {
+		act->set_active (true);
+	}
 	showhide_monitor_section (act->get_active ());
 }
 

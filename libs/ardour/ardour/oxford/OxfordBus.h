@@ -102,8 +102,17 @@ public:
     void processBlock(float* d, int n)
     {
         if (stage == Dac) {
-            // module SÉPARÉ (processor visible/bypassable) : MasterTape PCM-1630 (NAM) seul.
+            // module SÉPARÉ (processor visible/bypassable) : MasterTape PCM-1630 (NAM),
+            // suivi d'un limiteur brickwall OPTIONNEL — le réseau NAM recrée les
+            // crêtes du convertisseur du 1630 : ce limiteur est le seul point de
+            // la chaîne qui les rattrape APRÈS le modèle.
             masterTape.processBlock(d, n);
+            for (int i = 0; i < n; ++i) {
+                double s = d[i];
+                if (limOn) s = limiter(s);
+                trackLevel(s);
+                d[i] = (float) s;
+            }
         } else if (stage == Tail) {
             // Tail master : warmth -> limiteur -> CONVERTISSEUR (le NAM est un module à part, en aval).
             for (int i = 0; i < n; ++i) {

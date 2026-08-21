@@ -134,7 +134,9 @@ CONFIG_VARIABLE (MonitorModel, monitoring_model, "monitoring-model", ExternalMon
 CONFIG_VARIABLE (ListenPosition, listen_position, "listen-position", AfterFaderListen)
 CONFIG_VARIABLE (PFLPosition, pfl_position, "pfl-position", PFLFromAfterProcessors)
 CONFIG_VARIABLE (AFLPosition, afl_position, "afl-position", AFLFromAfterProcessors)
-CONFIG_VARIABLE (bool, use_monitor_bus, "use-monitor-bus", false)
+/* OXFORD : bus Monitor créé d'office (la section monitor est la régie de la
+ * console — elle s'affiche dans la vue MASTER du panneau Oxford). */
+CONFIG_VARIABLE (bool, use_monitor_bus, "use-monitor-bus", true)
 
 CONFIG_VARIABLE (bool, solo_control_is_listen_control, "solo-control-is-listen-control", false)
 CONFIG_VARIABLE (bool, exclusive_solo, "exclusive-solo", false)

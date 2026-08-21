@@ -543,7 +543,11 @@ Editor::Editor ()
 	_sections = new EditorSections (*this);
 	_snapshots = new EditorSnapshots ();
 	_locations = new EditorLocations (*this);
-	_properties_box = new SelectionPropertiesBox (SelectionPropertiesBox::DispositionMask (SelectionPropertiesBox::ShowRegions | SelectionPropertiesBox::ShowRoutes));
+	/* OXFORD : PAS de ShowRoutes — sélectionner une piste déversait toute la
+	 * surface générique de ses plugins dans le bandeau du bas (la moitié de
+	 * l'écran dès qu'un plugin a beaucoup de contrôles). Le bandeau reste utile
+	 * pour les régions ; l'édition des plugins passe par leur propre fenêtre. */
+	_properties_box = new SelectionPropertiesBox (SelectionPropertiesBox::DispositionMask (SelectionPropertiesBox::ShowRegions));
 
 	_bottom_hbox.pack_start (*_properties_box, true, true);
 	_properties_box->show ();

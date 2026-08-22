@@ -167,6 +167,9 @@ UI_CONFIG_VARIABLE (bool, prefer_tap_tempo, "prefer-tap-tempo", false)
 UI_CONFIG_VARIABLE (bool, sandbox_all_lua_scripts, "sandbox-all-lua-scripts", false)
 UI_CONFIG_VARIABLE (bool, update_action_scripts, "update-action-scripts", true)
 UI_CONFIG_VARIABLE (bool, use_cocoa_invalidation, "use-cocoa-invalidation", true)
+/* OXFORD : vrai une fois que le compteur de la barre d'état a été inséré dans
+ * la liste de visibilité d'une config préexistante (opération à faire UNE fois). */
+UI_CONFIG_VARIABLE (bool, oxford_timer_seeded, "oxford-timer-seeded", false)
 /* OXFORD : les propriétés de région s'ouvrent dans leur PROPRE fenêtre (le
  * bandeau du bas ne montre plus rien, cf. Editor::Editor). */
 UI_CONFIG_VARIABLE (Editing::RegionEditDisposition, region_edit_disposition, "region-edit-disposition", Editing::NeverBottomPane)

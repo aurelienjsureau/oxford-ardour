@@ -81,6 +81,9 @@ private:
 	Cairo::RefPtr<Cairo::ImageSurface> _kimg[6];   // skins knobs : 0=LF/bleu 1=LMF/vert 2=MF/rouge 3=HMF/orange 4=HF/jaune 5=neutre
 	Cairo::RefPtr<Cairo::ImageSurface> load_knob_image (const char* file);
 	bool _updating = false;
+	/* contexte de section courant pendant la CONSTRUCTION des vues ("EQ",
+	 * "GATE", "COMPRESSOR"...) : sert à choisir l'infobulle dans oxford_tip () */
+	const char* _tipctx = 0;
 	sigc::connection _timer;
 
 	Gtk::Notebook _nb;

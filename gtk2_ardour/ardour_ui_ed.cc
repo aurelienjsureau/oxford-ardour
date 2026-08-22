@@ -60,6 +60,7 @@
 #include "audio_clock.h"
 #include "keyboard.h"
 #include "monitor_section.h"
+#include "oxford_timer.h"
 #include "engine_dialog.h"
 #include "editor.h"
 #include "editing.h"
@@ -890,6 +891,13 @@ ARDOUR_UI::build_menu_bar ()
 	hbox->pack_end (error_alert_button, false, false, 2);
 	hbox->pack_end (wall_clock_label, false, false, 10);
 
+	/* OXFORD : compteur facturation / chrono / minuteur (clic = marche-arrêt,
+	 * clic droit = menu). Il a son propre gestionnaire de clic, donc il ne
+	 * déclenche pas le menu de visibilité de la barre d'état. */
+	_oxford_timer = manage (new OxfordTimer);
+	_oxford_timer->show ();
+	hbox->pack_end (*_oxford_timer, false, false, 10);
+
 	hbox->pack_end (*ev_dsp, false, false, 6);
 	hbox->pack_end (disk_space_label, false, false, 6);
 	hbox->pack_end (*ev_audio, false, false, 6);
@@ -920,6 +928,7 @@ ARDOUR_UI::build_menu_bar ()
 	// OSX provides its own wallclock, thank you very much
 	_status_bar_visibility.add (&wall_clock_label,      X_("WallClock"), _("Wall Clock"), false);
 #endif
+	_status_bar_visibility.add (_oxford_timer,          X_("OxTimer"),   _("Minuteur / Facturation"), true);
 
 	ev->signal_button_press_event().connect (sigc::mem_fun (_status_bar_visibility, &VisibilityGroup::button_press_event));
 

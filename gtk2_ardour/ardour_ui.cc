@@ -339,6 +339,7 @@ ARDOUR_UI::ARDOUR_UI (int *argcp, char **argvp[], const char* localedir)
 	, last_peak_grab (0)
 	, have_disk_speed_dialog_displayed (false)
 	, have_mmcss_error_dialog_displayed (false)
+	, _oxford_timer (0)
 	, _status_bar_visibility (X_("status-bar"))
 	, _log_not_acknowledged (LogLevelNone)
 	, duplicate_routes_dialog (0)
@@ -673,6 +674,15 @@ ARDOUR_UI::post_engine ()
 	XMLNode* n = Config->extra_xml (X_("UI"));
 	if (n) {
 		_status_bar_visibility.set_state (*n);
+	}
+
+	/* OXFORD : le compteur est un élément NEUF de la barre d'état. Une config
+	 * existante ne le liste pas, et VisibilityGroup masque tout ce qui n'est
+	 * pas listé -> on l'ajoute UNE seule fois. Ensuite l'utilisateur le montre
+	 * ou le cache comme les autres éléments (clic droit sur la barre). */
+	if (!UIConfiguration::instance().get_oxford_timer_seeded ()) {
+		_status_bar_visibility.set_state (_status_bar_visibility.get_state_value () + ",OxTimer");
+		UIConfiguration::instance().set_oxford_timer_seeded (true);
 	}
 
 	check_memory_locking();

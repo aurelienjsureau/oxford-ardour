@@ -26,6 +26,7 @@
 #include "ardour/oxford_channel.h"
 
 #include "widgets/ardour_fader.h"
+#include "widgets/tooltips.h"
 
 #include "mixer_ui.h"
 #include "mixer_strip.h"
@@ -247,6 +248,8 @@ OxfordConsolePanel::OxfordConsolePanel ()
 			if (_updating) return;
 			if (_chan) { _chan->setWidth ((float) (1.0 + v)); }
 		});
+		ArdourWidgets::set_tooltip (*_pan_knob,   _("Panoramique de la piste. Alt + glisser applique le même écart aux pistes sélectionnées."));
+		ArdourWidgets::set_tooltip (*_width_knob, _("Largeur stéréo de la voie (traitement M/S). Masqué sur les pistes mono."));
 		Gtk::Alignment* cen = Gtk::manage (new Gtk::Alignment (0.5, 0.5, 0, 0));
 		pw->pack_start (*_pan_knob, false, false);
 		pw->pack_start (*_width_knob, false, false);
@@ -271,6 +274,9 @@ OxfordConsolePanel::OxfordConsolePanel ()
 	navb->pack_start (_btn_eq, true, true);
 	navb->pack_start (_btn_dyn, true, true);
 	navb->pack_start (_btn_master, true, true);
+	ArdourWidgets::set_tooltip (_btn_eq,     _("Égaliseur 5 bandes + filtres de la voie sélectionnée."));
+	ArdourWidgets::set_tooltip (_btn_dyn,    _("Gate, expandeur, compresseur et limiteur de la voie sélectionnée."));
+	ArdourWidgets::set_tooltip (_btn_master, _("Régie : section Monitor, modèle PCM-1630 et limiteur de sortie."));
 	_box.pack_start (*navb, Gtk::PACK_SHRINK);
 	/* La vue MASTER (régie MONITOR + PCM-1630) n'appartient QU'À la tranche
 	 * master : depuis une piste, le bouton n'a pas lieu d'être. On l'affiche /
@@ -330,6 +336,71 @@ OxfordConsolePanel::fetch_theme_chrome ()
 	}
 }
 
+/* Texte d'infobulle d'un contrôle, à partir du contexte de section posé par le
+ * constructeur de la vue (_tipctx) et du libellé du potard. Un seul point de
+ * vérité : mk() et mkToggle() y passent tous. L'extinction générale est celle
+ * d'Ardour (Préférences -> Apparence -> infobulles), rien à coder ici. */
+static const char*
+oxford_tip (const char* ctx, const char* lab)
+{
+	if (!ctx || !lab) { return 0; }
+	const std::string c (ctx), l (lab);
+
+	if (c == "EQ") {
+		if (l == "FREQ")  { return _("Fréquence de la bande. Glisser pour régler ; la pastille correspondante bouge sur la courbe."); }
+		if (l == "Q")     { return _("Largeur de la cloche : 0,5 = très large, 16 = chirurgical. Bande en mode Shelf, ce potard devient l'OVERSHOOT (résonance du coude)."); }
+		if (l == "GAIN")  { return _("Boost ou atténuation de la bande, ±20 dB. La largeur suit le type de courbe choisi."); }
+		if (l == "In")    { return _("Active la bande. Éteinte, elle est retirée du calcul (aucune coloration résiduelle)."); }
+		if (l == "Shelf") { return _("Passe la bande en plateau au lieu d'une cloche. Le potard Q pilote alors l'overshoot."); }
+	}
+	if (c == "HP")  { return _("Fréquence du passe-haut (20–400 Hz). La pente se règle par le bouton à gauche."); }
+	if (c == "LP")  { return _("Fréquence du passe-bas (1–20 kHz). La pente se règle par le bouton à gauche."); }
+
+	if (c == "GATE") {
+		if (l == "On")  { return _("Porte de bruit : coupe sous le seuil, avec hystérésis de 4 dB pour ne pas hacher."); }
+		if (l == "Thr") { return _("Seuil d'ouverture de la porte."); }
+		if (l == "Rng") { return _("Atténuation appliquée porte fermée. −80 dB = coupure franche, −20 dB = simple assombrissement."); }
+		if (l == "Att") { return _("Temps d'ouverture. Très court pour les transitoires (batterie), plus long pour éviter les clics."); }
+		if (l == "Rel") { return _("Temps de refermeture après passage sous le seuil."); }
+	}
+	if (c == "EXPANDER") {
+		if (l == "On")  { return _("Expandeur : au lieu de couper net comme la porte, il descend progressivement ce qui est sous le seuil."); }
+		if (l == "Thr") { return _("Seuil sous lequel l'expansion agit."); }
+		if (l == "Rat") { return _("Taux d'expansion. 2 = 2 dB de descente par dB sous le seuil."); }
+		if (l == "Rng") { return _("Atténuation maximale que l'expandeur peut appliquer."); }
+		if (l == "Att") { return _("Temps de retour au gain nominal quand le signal repasse au-dessus du seuil."); }
+		if (l == "Rel") { return _("Temps de descente quand le signal passe sous le seuil."); }
+	}
+	if (c == "COMPRESSOR") {
+		if (l == "On")   { return _("Compresseur feed-forward, détecteur en dB, avec look-ahead partagé."); }
+		if (l == "Thr")  { return _("Seuil de compression : au-dessus, la réduction s'applique."); }
+		if (l == "Rat")  { return _("Taux, en loi 1/Ratio comme la console : à fond = limiteur. La valeur affichée est le X:1 réel."); }
+		if (l == "Att")  { return _("Temps d'établissement de la réduction."); }
+		if (l == "Hold") { return _("Gèle la réduction pendant ce temps avant de relâcher : évite le pompage sur les signaux irréguliers."); }
+		if (l == "Rel")  { return _("Temps de retour au gain nominal une fois le signal redescendu."); }
+		if (l == "Mkp")  { return _("Gain de compensation, jusqu'à +24 dB, pour retrouver le niveau perdu."); }
+		if (l == "Soft") { return _("Largeur du genou : 0 = coude franc, 20 = compression très progressive autour du seuil."); }
+	}
+	if (c == "LIMITER") {
+		if (l == "On")   { return _("Limiteur de canal, référencé sur la SORTIE de la voie."); }
+		if (l == "Thr")  { return _("Plafond du limiteur."); }
+		if (l == "Att")  { return _("Temps de réaction. Très court = plus de tenue, mais plus de distorsion sur les basses."); }
+		if (l == "Hold") { return _("Gèle la réduction avant de relâcher."); }
+		if (l == "Rel")  { return _("Temps de relâchement de la limitation."); }
+	}
+
+	if (c == "PCM") {
+		if (l == "In")  { return _("Niveau d'entrée du modèle PCM-1630 : c'est lui qui décide à quel point on attaque la capture."); }
+		if (l == "Out") { return _("Rattrapage de niveau en sortie du modèle."); }
+		if (l == "On")  { return _("Fait passer le master par le modèle du convertisseur PCM-1630. Éteint = chemin direct."); }
+	}
+	if (c == "OUTLIM") {
+		if (l == "Ceil") { return _("Plafond du limiteur de sortie, placé APRÈS le PCM-1630 pour rattraper les crêtes que la capture fait remonter."); }
+		if (l == "On")   { return _("Limiteur brickwall de sortie, dernier maillon avant les sorties physiques."); }
+	}
+	return 0;
+}
+
 void
 OxfordConsolePanel::apply_chrome ()
 {
@@ -363,6 +434,7 @@ OxfordConsolePanel::mk (double lo, double hi, double def, const char* lab,
 	TridentKnob* k = Gtk::manage (new TridentKnob (lo, hi, def, lab, cr, cg, cb));
 	k->set_bg (kSubBg[0], kSubBg[1], kSubBg[2]);   // fond clair console
 	_knobsSub.push_back (k);
+	if (const char* tip = oxford_tip (_tipctx, lab)) { ArdourWidgets::set_tooltip (*k, tip); }
 	k->set_ui_scale (kKnob);                                // agrandissement ×1.5
 	k->set_image (_kimg[5]);   // skin neutre par défaut (les bandes EQ écrasent avec leur couleur)
 	k->on_format (fmt);
@@ -400,6 +472,7 @@ OxfordConsolePanel::mkToggle (Gtk::Box& box, const char* lab, bool master,
 	ArdourButton* b = Gtk::manage (new ArdourButton (""));
 	b->set_fixed_colors (0xc8e030ff, 0xc8c4b8ff);   // actif vert-jaune / inactif crème
 	b->set_corner_radius (3.0);
+	if (const char* tip = oxford_tip (_tipctx, lab)) { ArdourWidgets::set_tooltip (*b, tip); }
 	b->set_size_request ((int)(16*kKnob), (int)(16*kKnob));
 	const size_t idx = _toggles.size ();
 	Toggle t; t.btn = b; t.master = master; t.set = set; t.get = get;
@@ -447,6 +520,7 @@ OxfordConsolePanel::build_eq ()
 
 	/* courbe de réponse en tête — pastilles draggables (freq/gain) + molette (Q) */
 	_eq_curve.set_size_request (-1, (int)(120*kUI));
+	ArdourWidgets::set_tooltip (_eq_curve, _("Réponse de l'égaliseur. Glisser une pastille règle la fréquence et le gain de sa bande, la molette règle le Q (l'overshoot en mode Shelf). Les pastilles crème sont les filtres : les glisser les enclenche, la molette change la pente. Alt : la sélection suit."));
 	_eq_curve.signal_expose_event ().connect (sigc::mem_fun (*this, &OxfordConsolePanel::on_eq_expose));
 	_eq_curve.add_events (Gdk::BUTTON_PRESS_MASK | Gdk::BUTTON_RELEASE_MASK
 	                    | Gdk::POINTER_MOTION_MASK | Gdk::SCROLL_MASK);
@@ -469,10 +543,12 @@ OxfordConsolePanel::build_eq ()
 	});
 	Gtk::Label* cl = Gtk::manage (new Gtk::Label (_("Curve"))); cl->set_alignment (0,0.5);
 	opt->pack_start (*cl, false, false);
+	ArdourWidgets::set_tooltip (_curve_btn, _("Type de courbe : la façon dont la largeur des cloches réagit au gain. 1 = Q constant, 2 = symétrique en boost et pincé en cut, 3 = modéré (réglage d'usine), 4 = fortement proportionnel."));
 	opt->pack_start (_curve_btn, true, true);
 	b->pack_start (*opt, Gtk::PACK_SHRINK);
 
 	/* HPF */
+	_tipctx = "HP";
 	Gtk::HBox* hp = Gtk::manage (new Gtk::HBox ()); hp->set_spacing (2);
 	Gtk::Label* hpl = Gtk::manage (new Gtk::Label (_("HP"))); hpl->set_size_request (40,-1); hpl->set_alignment (0,0.5);
 	hp->pack_start (*hpl, false, false);
@@ -487,6 +563,7 @@ OxfordConsolePanel::build_eq ()
 		const float slope = on ? (float) s : 12.f;
 		apply_linked ([on, slope] (OxfordChannel& c) { c.setHPF (on, c.hpfHz (), slope); });   // Alt -> sélection
 	});
+	ArdourWidgets::set_tooltip (_hp_slope_btn, _("Pente du passe-haut : clic pour parcourir off, 6, 12 … 36 dB/oct."));
 	hp->pack_start (_hp_slope_btn, false, false);
 	hp->pack_start (*mk (20,400,80,_("Freq"),f_hz,false,-1,
 	    [](OxfordChannel& c,double v){ c.setHPF (c.hpfOn (), (float)v, c.hpfSlope ()); },
@@ -496,6 +573,7 @@ OxfordConsolePanel::build_eq ()
 
 	/* 5 bandes empilées. Chaque bloc : label crème à gauche | (FREQ+Q) au-dessus,
 	 * GAIN dessous | (LF/HF : shelf toggle). Resserré, séparateur fin entre blocs. */
+	_tipctx = "EQ";
 	const char* bn[5] = { "LF","LMF","MF","HMF","HF" };
 	Gtk::VBox* bandbox = Gtk::manage (new Gtk::VBox ()); bandbox->set_spacing (10);   // bandes plus aérées
 	for (int i = 0; i < 5; ++i) {
@@ -551,6 +629,7 @@ OxfordConsolePanel::build_eq ()
 	b->pack_start (*bandframe, Gtk::PACK_SHRINK);
 
 	/* LPF */
+	_tipctx = "LP";
 	Gtk::HBox* lp = Gtk::manage (new Gtk::HBox ()); lp->set_spacing (2);
 	Gtk::Label* lpl = Gtk::manage (new Gtk::Label (_("LP"))); lpl->set_size_request (40,-1); lpl->set_alignment (0,0.5);
 	lp->pack_start (*lpl, false, false);
@@ -565,6 +644,7 @@ OxfordConsolePanel::build_eq ()
 		const float slope = on ? (float) s : 12.f;
 		apply_linked ([on, slope] (OxfordChannel& c) { c.setLPF (on, c.lpfHz (), slope); });   // Alt -> sélection
 	});
+	ArdourWidgets::set_tooltip (_lp_slope_btn, _("Pente du passe-bas : clic pour parcourir off, 6, 12 … 36 dB/oct."));
 	lp->pack_start (_lp_slope_btn, false, false);
 	lp->pack_start (*mk (1000,20000,18000,_("Freq"),f_hz,false,-1,
 	    [](OxfordChannel& c,double v){ c.setLPF (c.lpfOn (), (float)v, c.lpfSlope ()); },
@@ -589,10 +669,12 @@ OxfordConsolePanel::build_dyn ()
 
 	/* graphe transfert IN/OUT PLEINE LARGEUR */
 	_dyn_curve.set_size_request (-1, (int)(105*kUI));
+	ArdourWidgets::set_tooltip (_dyn_curve, _("Courbe de transfert entrée/sortie des quatre sections réunies. Le point mobile est le niveau du détecteur ; les pointillés marquent les seuils."));
 	_dyn_curve.signal_expose_event ().connect (sigc::mem_fun (*this, &OxfordConsolePanel::on_dyn_expose));
 	b->pack_start (_dyn_curve, Gtk::PACK_SHRINK);
 	/* 4 VU de GR HORIZONTAUX (Gate/Exp/Comp/Lim) sous le graphe, barres fines (précis) */
 	_dyn_meters.set_size_request (-1, (int)(64*kUI));
+	ArdourWidgets::set_tooltip (_dyn_meters, _("Réduction de gain des quatre sections, 0 à 20 dB, avec maintien de crête."));
 	_dyn_meters.signal_expose_event ().connect (sigc::mem_fun (*this, &OxfordConsolePanel::on_dyn_meters_expose));
 	b->pack_start (_dyn_meters, Gtk::PACK_SHRINK);
 
@@ -620,6 +702,7 @@ OxfordConsolePanel::build_dyn ()
 		char m[96]; std::snprintf (m,sizeof m,"<b><span size=\"large\" foreground=\"%s\">%s</span></b>",color,name);
 		l->set_markup (m); l->set_alignment (0,0.5);
 		hd->pack_start (*l, true, true);
+		_tipctx = name;   /* les knobs de la section qui suit héritent du contexte */
 		mkToggle (*hd, _("On"), false, son, gon, "#1a2433");   // libellé clair sur barre sombre
 		bar->add (*hd);
 		b->pack_start (*bar, Gtk::PACK_SHRINK);
@@ -733,6 +816,7 @@ OxfordConsolePanel::build_master ()
 	/* ---- PCM-1630 : trims autour du réseau NAM (capture non-linéaire) ----
 	 * "In" recule l'attaque du modèle (désature), "Out" compense le niveau. */
 	{
+		_tipctx = "PCM";
 		Gtk::VBox* c = section (_("PCM-1630"), "#3a5a8c", nullptr, nullptr);
 		flow (c, {
 		  mk(-24,24,0,_("In"),f_db,true,-1,[](OxfordChannel& ch,double v){ch.setMtInDb((float)v);},[](OxfordChannel& ch){return (double)ch.mtInDb();}, 0.35,0.48,0.66),
@@ -744,6 +828,7 @@ OxfordConsolePanel::build_master ()
 	 * point de la chaîne où on peut les rattraper. Des plugins peuvent aussi être
 	 * insérés après le PCM-1630 dans la processor-box du master. */
 	{
+		_tipctx = "OUTLIM";
 		Gtk::VBox* c = section (_("OUT LIMITER"), "#c62828",
 		    [](OxfordChannel& ch,bool v){ch.setBusLimOn(v);},
 		    [](OxfordChannel& ch){return ch.busLimOn();});

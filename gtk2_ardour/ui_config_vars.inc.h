@@ -167,7 +167,9 @@ UI_CONFIG_VARIABLE (bool, prefer_tap_tempo, "prefer-tap-tempo", false)
 UI_CONFIG_VARIABLE (bool, sandbox_all_lua_scripts, "sandbox-all-lua-scripts", false)
 UI_CONFIG_VARIABLE (bool, update_action_scripts, "update-action-scripts", true)
 UI_CONFIG_VARIABLE (bool, use_cocoa_invalidation, "use-cocoa-invalidation", true)
-UI_CONFIG_VARIABLE (Editing::RegionEditDisposition, region_edit_disposition, "region-edit-disposition", Editing::PreferBottomPane)
+/* OXFORD : les propriétés de région s'ouvrent dans leur PROPRE fenêtre (le
+ * bandeau du bas ne montre plus rien, cf. Editor::Editor). */
+UI_CONFIG_VARIABLE (Editing::RegionEditDisposition, region_edit_disposition, "region-edit-disposition", Editing::NeverBottomPane)
 UI_CONFIG_VARIABLE (int, drag_sensitivity, "drag-sensitivity", 1)
 UI_CONFIG_VARIABLE (Gtk::WindowPosition, default_window_position, "default-window-position", Gtk::WIN_POS_MOUSE)
 UI_CONFIG_VARIABLE (ARDOUR::ColorMode, default_midi_note_color_mode, "default-midi-note-color-mode", ARDOUR::TrackColor)

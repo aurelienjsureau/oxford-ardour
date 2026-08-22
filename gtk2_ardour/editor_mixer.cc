@@ -67,6 +67,16 @@ Editor::showhide_att_left (bool yn)
 }
 
 void
+Editor::showhide_att_bottom (bool)
+{
+	/* OXFORD : le bandeau de propriétés du bas est muet (masque de disposition
+	 * vide) — sélectionner une région ou une piste ne doit RIEN ouvrir. On le
+	 * garde donc fermé quel que soit l'état sauvegardé de l'action, au lieu
+	 * d'afficher une bande vide. Les propriétés de région = fenêtre dédiée. */
+	Tabbable::showhide_att_bottom (false);
+}
+
+void
 Editor::show_editor_mixer (bool yn)
 {
 	std::shared_ptr<ARDOUR::Route> r;

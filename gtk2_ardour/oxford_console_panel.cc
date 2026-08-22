@@ -222,6 +222,21 @@ OxfordConsolePanel::OxfordConsolePanel ()
 				_route->pan_azimuth_control ()->set_value (v, PBD::Controllable::NoGroup);
 			}
 		});
+		/* Alt + glisser : MÊME delta de pan sur les autres pistes sélectionnées
+		 * (le pan vit sur la Route, pas sur l'OxfordChannel -> apply_linked ne
+		 * le couvrait pas). */
+		_pan_knob->on_linked ([this](double delta){
+			Mixer_UI* mx = Mixer_UI::instance ();
+			if (!mx) { return; }
+			for (MixerStrip* s : mx->mixer_strips ()) {
+				std::shared_ptr<ARDOUR::Route> r = s->route ();
+				if (!r || !r->is_selected () || r->is_master () || r == _route) { continue; }
+				std::shared_ptr<ARDOUR::AutomationControl> pc = r->pan_azimuth_control ();
+				if (!pc) { continue; }
+				double v = pc->get_value () + delta;
+				pc->set_value (v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v), PBD::Controllable::NoGroup);
+			}
+		});
 		_width_knob = Gtk::manage (new TridentKnob (-1, 1, 0, _("Width"), 0.45, 0.50, 0.58));
 		_width_knob->set_bg (kPanelBg[0], kPanelBg[1], kPanelBg[2]);   // crème (entourage châssis)
 		_knobsMain.push_back (_width_knob);
@@ -257,6 +272,13 @@ OxfordConsolePanel::OxfordConsolePanel ()
 	navb->pack_start (_btn_dyn, true, true);
 	navb->pack_start (_btn_master, true, true);
 	_box.pack_start (*navb, Gtk::PACK_SHRINK);
+	/* La vue MASTER (régie MONITOR + PCM-1630) n'appartient QU'À la tranche
+	 * master : depuis une piste, le bouton n'a pas lieu d'être. On l'affiche /
+	 * masque avec la sélection (set_no_show_all : un show_all() du parent ne
+	 * doit pas le ressortir). Inversement EQ/DYN disparaissent sur le master. */
+	_btn_eq.set_no_show_all (true);
+	_btn_dyn.set_no_show_all (true);
+	_btn_master.set_no_show_all (true);
 
 	_nb.set_show_tabs (false);
 	_nb.set_show_border (false);
@@ -269,6 +291,9 @@ OxfordConsolePanel::OxfordConsolePanel ()
 
 	show_view (0);
 	show_all ();
+	_btn_eq.show ();
+	_btn_dyn.show ();
+	_btn_master.hide ();   // apparaît uniquement quand le master est sélectionné
 
 	/* suivi LIVE du thème (Oxford <-> Oxford Warm) : recolore tout le châssis */
 	UIConfiguration::instance ().ColorsChanged.connect (sigc::mem_fun (*this, &OxfordConsolePanel::theme_colors_changed));
@@ -838,6 +863,10 @@ OxfordConsolePanel::refresh ()
 	}
 	if (msel != _masterSelected) {
 		_masterSelected = msel;
+		/* le bouton MASTER n'existe QUE sur la tranche master (la régie n'a rien
+		 * à faire depuis une piste), et EQ/DYN n'ont rien à piloter sur elle */
+		if (msel) { _btn_eq.hide (); _btn_dyn.hide (); _btn_master.show (); }
+		else      { _btn_master.hide (); _btn_eq.show (); _btn_dyn.show (); }
 		show_view (msel ? 2 : _lastTrackPage);
 	}
 

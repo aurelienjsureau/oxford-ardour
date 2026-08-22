@@ -299,6 +299,10 @@ public:
 	void show_editor_mixer (bool yn);
 	void create_editor_mixer ();
 	void showhide_att_left (bool);
+	/* OXFORD : le bandeau de propriétés du bas ne montre plus rien (cf. le
+	 * masque vide de _properties_box) -> il reste fermé quoi qu'il arrive,
+	 * plutôt que de laisser une bande vide à l'écran. */
+	void showhide_att_bottom (bool);
 	void set_selected_mixer_strip (TimeAxisView&);
 	void mixer_strip_width_changed ();
 	void hide_track_in_display (TimeAxisView* tv, bool apply_to_selection = false);

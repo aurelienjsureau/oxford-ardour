@@ -77,6 +77,7 @@ private:
 	void set_mode (Mode);
 	void set_duration (double secs);
 	void start_task (const std::string& name, double planned);
+	void start_countdown (double seconds);   /* decompte direct, sans nommer de tache */
 	void new_task_dialog ();
 	void custom_duration_dialog ();
 	void reset_current ();

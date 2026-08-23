@@ -96,34 +96,90 @@ static void rrect (const Cairo::RefPtr<Cairo::Context>& cr, double x, double y, 
 
 /* peint châssis + écran navy (dégradé) + bezel, puis CLIPPE sur l'écran :
  * tout ce qui est dessiné ensuite reste dans la vitre. */
+/* épaisseur du cadre noir autour du tube (le CRT de l'OXF-R3 est ENCASTRÉ
+ * derrière un cadre, il ne remplit pas l'ouverture du châssis) */
+static const double kBezel = 5.0;
+
 static void screen_begin (const Cairo::RefPtr<Cairo::Context>& cr, double w, double h)
 {
 	cr->set_source_rgb (kPanelBg[0], kPanelBg[1], kPanelBg[2]); cr->paint ();
-	/* ombre portée du bezel */
+	/* ombre portée du bloc écran sur le châssis */
 	rrect (cr, 2.0, 3.0, w - 4.0, h - 4.0, 8.0);
 	cr->set_source_rgba (0.0, 0.0, 0.0, 0.25); cr->fill ();
-	/* vitre : dégradé navy (plus clair en haut -> profond en bas) */
+	/* CADRE : plastique noir mat, très légèrement dégradé */
 	rrect (cr, 2.0, 2.0, w - 4.0, h - 5.0, 8.0);
-	Cairo::RefPtr<Cairo::LinearGradient> g = Cairo::LinearGradient::create (0, 0, 0, h);
+	{
+		Cairo::RefPtr<Cairo::LinearGradient> bz = Cairo::LinearGradient::create (0, 0, 0, h);
+		bz->add_color_stop_rgb (0.0, 0.115, 0.125, 0.145);
+		bz->add_color_stop_rgb (1.0, 0.055, 0.060, 0.075);
+		cr->set_source (bz);
+		cr->fill_preserve ();
+	}
+	cr->set_source_rgba (0.0, 0.0, 0.0, 0.85); cr->set_line_width (1.2); cr->stroke ();
+	/* filet clair sur l'arête haute du cadre (lumière rasante d'atelier) */
+	rrect (cr, 3.0, 3.0, w - 6.0, h - 7.0, 7.0);
+	cr->set_source_rgba (1.0, 1.0, 1.0, 0.055); cr->set_line_width (1.0); cr->stroke ();
+
+	/* OUVERTURE DU TUBE, encastrée de kBezel dans le cadre */
+	const double sx = 2.0 + kBezel, sy = 2.0 + kBezel;
+	const double sw = w - 4.0 - 2.0 * kBezel, sh = h - 5.0 - 2.0 * kBezel;
+	rrect (cr, sx, sy, sw, sh, 4.0);
+	Cairo::RefPtr<Cairo::LinearGradient> g = Cairo::LinearGradient::create (0, sy, 0, sy + sh);
 	g->add_color_stop_rgb (0.00, kGraphBg[0]*1.9, kGraphBg[1]*1.9, kGraphBg[2]*1.45);
 	g->add_color_stop_rgb (0.30, kGraphBg[0],     kGraphBg[1],     kGraphBg[2]);
 	g->add_color_stop_rgb (1.00, kGraphBg[0]*0.55, kGraphBg[1]*0.60, kGraphBg[2]*0.85);
 	cr->set_source (g);
 	cr->fill_preserve ();
-	/* liseré du bezel (sombre dehors, filet clair dedans) */
-	cr->set_source_rgba (0.05, 0.07, 0.12, 0.9); cr->set_line_width (1.6); cr->stroke ();
-	rrect (cr, 3.2, 3.2, w - 6.4, h - 7.4, 7.0);
-	cr->set_source_rgba (1.0, 1.0, 1.0, 0.06); cr->set_line_width (1.0); cr->stroke ();
+	/* ombre interne : le tube est en retrait derrière le cadre */
+	cr->set_source_rgba (0.0, 0.0, 0.0, 0.55); cr->set_line_width (2.0); cr->stroke ();
 	/* clip vitre pour la suite (grille, courbes, reflets) */
-	rrect (cr, 3.0, 3.0, w - 6.0, h - 7.0, 7.0);
+	rrect (cr, sx, sy, sw, sh, 4.0);
 	cr->clip ();
 }
 
-/* reflet "verre" en haut de l'écran — à dessiner en DERNIER (par-dessus la courbe) */
+/* Traitement CRT — à dessiner en DERNIER (par-dessus la courbe), le clip de
+ * screen_begin le confine au tube :
+ *   1) lignes de balayage    2) vignettage des coins    3) reflet spéculaire. */
 static void screen_glass (const Cairo::RefPtr<Cairo::Context>& cr, double w, double h)
 {
+	/* 1) balayage : une ligne sombre toutes les 3 px, très faible */
+	cr->set_line_width (1.0);
+	cr->set_source_rgba (0.0, 0.0, 0.0, 0.055);
+	for (double y = 1.5; y < h; y += 3.0) {
+		cr->move_to (0, y); cr->line_to (w, y);
+	}
+	cr->stroke ();
+
+	/* 2) vignettage : les bords du tube s'assombrissent (courbure du verre) */
+	{
+		const double cx = w * 0.5, cy = h * 0.5;
+		const double rad = std::sqrt (cx*cx + cy*cy);
+		Cairo::RefPtr<Cairo::RadialGradient> v = Cairo::RadialGradient::create (cx, cy, rad * 0.42, cx, cy, rad);
+		v->add_color_stop_rgba (0.0, 0.0, 0.0, 0.0, 0.0);
+		v->add_color_stop_rgba (1.0, 0.0, 0.0, 0.0, 0.38);
+		cr->set_source (v);
+		cr->rectangle (0, 0, w, h);
+		cr->fill ();
+	}
+
+	/* 3) reflet spéculaire : tache oblique en haut-gauche, comme sur la photo */
+	{
+		cr->save ();
+		cr->translate (w * 0.30, h * 0.10);
+		cr->rotate (-0.42);
+		cr->scale (w * 0.42, h * 0.34);
+		Cairo::RefPtr<Cairo::RadialGradient> s = Cairo::RadialGradient::create (0, 0, 0.0, 0, 0, 1.0);
+		s->add_color_stop_rgba (0.0, 1.0, 1.0, 1.0, 0.085);
+		s->add_color_stop_rgba (0.6, 1.0, 1.0, 1.0, 0.030);
+		s->add_color_stop_rgba (1.0, 1.0, 1.0, 1.0, 0.0);
+		cr->set_source (s);
+		cr->arc (0, 0, 1.0, 0, 2*M_PI);
+		cr->fill ();
+		cr->restore ();
+	}
+	/* voile général en haut de dalle */
 	Cairo::RefPtr<Cairo::LinearGradient> g = Cairo::LinearGradient::create (0, 0, 0, h * 0.38);
-	g->add_color_stop_rgba (0.0, 1.0, 1.0, 1.0, 0.075);
+	g->add_color_stop_rgba (0.0, 1.0, 1.0, 1.0, 0.045);
 	g->add_color_stop_rgba (1.0, 1.0, 1.0, 1.0, 0.0);
 	cr->set_source (g);
 	cr->rectangle (0, 0, w, h * 0.38);
@@ -156,9 +212,14 @@ OxfordConsolePanel::OxfordConsolePanel ()
 		if (fimg) { ArdourWidgets::ArdourFader::set_handle_image (fimg); }
 	}
 	set_size_request ((int) (320 * kUI), -1);
-	/* fond CLAIR global du panel : l'EventBox peint, le VBox interne porte tout */
+	/* fond CLAIR global du panel : l'EventBox peint, le VBox interne porte tout.
+	 * set_app_paintable(true) EMPÊCHE GTK de peindre l'aplat par-dessus notre
+	 * texture ; le handler expose est branché AVANT le défaut et retourne false,
+	 * pour que la propagation aux enfants ait quand même lieu. */
 	Gdk::Color bg; bg.set_rgb_p (kPanelBg[0], kPanelBg[1], kPanelBg[2]);
 	modify_bg (Gtk::STATE_NORMAL, bg);
+	set_app_paintable (true);
+	signal_expose_event ().connect (sigc::mem_fun (*this, &OxfordConsolePanel::on_panel_expose), false);
 	/* texte CLAIR par défaut (hérité par les labels enfants + titres de cadres) sur fond ardoise */
 	Gdk::Color fgc; fgc.set_rgb_p (kLabelDk[0], kLabelDk[1], kLabelDk[2]);
 	modify_fg (Gtk::STATE_NORMAL, fgc);
@@ -248,12 +309,15 @@ OxfordConsolePanel::OxfordConsolePanel ()
 			if (_updating) return;
 			if (_chan) { _chan->setWidth ((float) (1.0 + v)); }
 		});
-		ArdourWidgets::set_tooltip (*_pan_knob,   _("Panoramique de la piste. Alt + glisser applique le même écart aux pistes sélectionnées."));
-		ArdourWidgets::set_tooltip (*_width_knob, _("Largeur stéréo de la voie (traitement M/S). Masqué sur les pistes mono."));
+		ArdourWidgets::set_tooltip (*_pan_knob,   _("Track panning. Alt + drag applies the same offset to the selected tracks."));
+		ArdourWidgets::set_tooltip (*_width_knob, _("Stereo width of the strip (M/S processing). Hidden on mono tracks."));
 		Gtk::Alignment* cen = Gtk::manage (new Gtk::Alignment (0.5, 0.5, 0, 0));
 		pw->pack_start (*_pan_knob, false, false);
 		pw->pack_start (*_width_knob, false, false);
 		cen->add (*pw);
+		/* masqué sur la tranche master : un panoramique n'y a pas de sens */
+		cen->set_no_show_all (true);
+		_panwid_box = cen;
 		_box.pack_start (*cen, Gtk::PACK_SHRINK);
 	}
 
@@ -268,15 +332,15 @@ OxfordConsolePanel::OxfordConsolePanel ()
 	_btn_master.set_fixed_colors (0x9aa5b0ff, 0x454a52ff);
 	{ Pango::FontDescription nf ("ArdourSans bold 10");
 	  _btn_eq.set_layout_font (nf); _btn_dyn.set_layout_font (nf); _btn_master.set_layout_font (nf); }
-	_btn_eq.signal_clicked.connect     (sigc::bind (sigc::mem_fun (*this, &OxfordConsolePanel::show_view), 0));
-	_btn_dyn.signal_clicked.connect    (sigc::bind (sigc::mem_fun (*this, &OxfordConsolePanel::show_view), 1));
+	_btn_eq.signal_clicked.connect     ([this](){ show_view (_isBus ? 4 : 0); });
+	_btn_dyn.signal_clicked.connect    ([this](){ show_view (_isBus ? 3 : 1); });
 	_btn_master.signal_clicked.connect (sigc::bind (sigc::mem_fun (*this, &OxfordConsolePanel::show_view), 2));
 	navb->pack_start (_btn_eq, true, true);
 	navb->pack_start (_btn_dyn, true, true);
 	navb->pack_start (_btn_master, true, true);
-	ArdourWidgets::set_tooltip (_btn_eq,     _("Égaliseur 5 bandes + filtres de la voie sélectionnée."));
-	ArdourWidgets::set_tooltip (_btn_dyn,    _("Gate, expandeur, compresseur et limiteur de la voie sélectionnée."));
-	ArdourWidgets::set_tooltip (_btn_master, _("Régie : section Monitor, modèle PCM-1630 et limiteur de sortie."));
+	ArdourWidgets::set_tooltip (_btn_eq,     _("Five-band equaliser and filters of the selected strip."));
+	ArdourWidgets::set_tooltip (_btn_dyn,    _("Gate, expander, compressor and limiter of the selected strip."));
+	ArdourWidgets::set_tooltip (_btn_master, _("Control room: monitor section, PCM-1630 model and output limiter."));
 	_box.pack_start (*navb, Gtk::PACK_SHRINK);
 	/* La vue MASTER (régie MONITOR + PCM-1630) n'appartient QU'À la tranche
 	 * master : depuis une piste, le bouton n'a pas lieu d'être. On l'affiche /
@@ -290,9 +354,11 @@ OxfordConsolePanel::OxfordConsolePanel ()
 	_nb.set_show_border (false);
 	{ Gdk::Color nc; nc.set_rgb_p (kPanelBg[0], kPanelBg[1], kPanelBg[2]); _nb.modify_bg (Gtk::STATE_NORMAL, nc); }
 	_chromeMain.push_back (&_nb);
-	_nb.append_page (*wrap_scroll (build_eq ()));
-	_nb.append_page (*wrap_scroll (build_dyn ()));
+	_nb.append_page (*wrap_scroll (build_eq (false)));
+	_nb.append_page (*wrap_scroll (build_dyn (false)));
 	_nb.append_page (*wrap_scroll (build_master ()));
+	_nb.append_page (*wrap_scroll (build_dyn (true)));   // page 3 : dynamique des BUS
+	_nb.append_page (*wrap_scroll (build_eq (true)));    // page 4 : EQ des BUS
 	_box.pack_start (_nb, Gtk::PACK_EXPAND_WIDGET);
 
 	show_view (0);
@@ -347,56 +413,56 @@ oxford_tip (const char* ctx, const char* lab)
 	const std::string c (ctx), l (lab);
 
 	if (c == "EQ") {
-		if (l == "FREQ")  { return _("Fréquence de la bande. Glisser pour régler ; la pastille correspondante bouge sur la courbe."); }
-		if (l == "Q")     { return _("Largeur de la cloche : 0,5 = très large, 16 = chirurgical. Bande en mode Shelf, ce potard devient l'OVERSHOOT (résonance du coude)."); }
-		if (l == "GAIN")  { return _("Boost ou atténuation de la bande, ±20 dB. La largeur suit le type de courbe choisi."); }
-		if (l == "In")    { return _("Active la bande. Éteinte, elle est retirée du calcul (aucune coloration résiduelle)."); }
-		if (l == "Shelf") { return _("Passe la bande en plateau au lieu d'une cloche. Le potard Q pilote alors l'overshoot."); }
+		if (l == "FREQ")  { return _("Band frequency. Drag to set; the matching dot moves along the curve."); }
+		if (l == "Q")     { return _("Bell width: 0.5 = very wide, 16 = surgical. With the band in Shelf mode, this knob becomes the OVERSHOOT (corner resonance)."); }
+		if (l == "GAIN")  { return _("Band boost or cut, ±20 dB. The width follows the selected curve type."); }
+		if (l == "In")    { return _("Enables the band. When off it is removed from the computation (no residual colouration)."); }
+		if (l == "Shelf") { return _("Switches the band from a bell to a shelf. The Q knob then drives the overshoot."); }
 	}
-	if (c == "HP")  { return _("Fréquence du passe-haut (20–400 Hz). La pente se règle par le bouton à gauche."); }
-	if (c == "LP")  { return _("Fréquence du passe-bas (1–20 kHz). La pente se règle par le bouton à gauche."); }
+	if (c == "HP")  { return _("High-pass frequency (20–400 Hz). The slope is set with the button on the left."); }
+	if (c == "LP")  { return _("Low-pass frequency (1–20 kHz). The slope is set with the button on the left."); }
 
 	if (c == "GATE") {
-		if (l == "On")  { return _("Porte de bruit : coupe sous le seuil, avec hystérésis de 4 dB pour ne pas hacher."); }
-		if (l == "Thr") { return _("Seuil d'ouverture de la porte."); }
-		if (l == "Rng") { return _("Atténuation appliquée porte fermée. −80 dB = coupure franche, −20 dB = simple assombrissement."); }
-		if (l == "Att") { return _("Temps d'ouverture. Très court pour les transitoires (batterie), plus long pour éviter les clics."); }
-		if (l == "Rel") { return _("Temps de refermeture après passage sous le seuil."); }
+		if (l == "On")  { return _("Noise gate: cuts below the threshold, with 4 dB of hysteresis to avoid chattering."); }
+		if (l == "Thr") { return _("Level at which the gate opens."); }
+		if (l == "Rng") { return _("Attenuation applied while the gate is closed. −80 dB = hard cut, −20 dB = mere darkening."); }
+		if (l == "Att") { return _("Opening time. Very short for transients (drums), longer to avoid clicks."); }
+		if (l == "Rel") { return _("Closing time once the signal falls below the threshold."); }
 	}
 	if (c == "EXPANDER") {
-		if (l == "On")  { return _("Expandeur : au lieu de couper net comme la porte, il descend progressivement ce qui est sous le seuil."); }
-		if (l == "Thr") { return _("Seuil sous lequel l'expansion agit."); }
-		if (l == "Rat") { return _("Taux d'expansion. 2 = 2 dB de descente par dB sous le seuil."); }
-		if (l == "Rng") { return _("Atténuation maximale que l'expandeur peut appliquer."); }
-		if (l == "Att") { return _("Temps de retour au gain nominal quand le signal repasse au-dessus du seuil."); }
-		if (l == "Rel") { return _("Temps de descente quand le signal passe sous le seuil."); }
+		if (l == "On")  { return _("Expander: instead of cutting abruptly like the gate, it gradually pushes down whatever sits below the threshold."); }
+		if (l == "Thr") { return _("Level below which expansion acts."); }
+		if (l == "Rat") { return _("Expansion ratio. 2 = 2 dB down for every dB below the threshold."); }
+		if (l == "Rng") { return _("Maximum attenuation the expander may apply."); }
+		if (l == "Att") { return _("Time to return to unity gain once the signal rises back above the threshold."); }
+		if (l == "Rel") { return _("Time to pull down once the signal falls below the threshold."); }
 	}
 	if (c == "COMPRESSOR") {
-		if (l == "On")   { return _("Compresseur feed-forward, détecteur en dB, avec look-ahead partagé."); }
-		if (l == "Thr")  { return _("Seuil de compression : au-dessus, la réduction s'applique."); }
-		if (l == "Rat")  { return _("Taux, en loi 1/Ratio comme la console : à fond = limiteur. La valeur affichée est le X:1 réel."); }
-		if (l == "Att")  { return _("Temps d'établissement de la réduction."); }
-		if (l == "Hold") { return _("Gèle la réduction pendant ce temps avant de relâcher : évite le pompage sur les signaux irréguliers."); }
-		if (l == "Rel")  { return _("Temps de retour au gain nominal une fois le signal redescendu."); }
-		if (l == "Mkp")  { return _("Gain de compensation, jusqu'à +24 dB, pour retrouver le niveau perdu."); }
-		if (l == "Soft") { return _("Largeur du genou : 0 = coude franc, 20 = compression très progressive autour du seuil."); }
+		if (l == "On")   { return _("Feed-forward compressor, detector in dB, with shared look-ahead."); }
+		if (l == "Thr")  { return _("Compression threshold: above it, gain reduction applies."); }
+		if (l == "Rat")  { return _("Ratio, using the console's 1/Ratio law: fully up = limiter. The displayed value is the real X:1."); }
+		if (l == "Att")  { return _("Time for the gain reduction to build up."); }
+		if (l == "Hold") { return _("Freezes the gain reduction for this long before releasing: avoids pumping on uneven material."); }
+		if (l == "Rel")  { return _("Time to return to unity gain once the signal has come back down."); }
+		if (l == "Mkp")  { return _("Make-up gain, up to +24 dB, to recover the level lost to compression."); }
+		if (l == "Soft") { return _("Knee width: 0 = hard corner, 20 = very progressive compression around the threshold."); }
 	}
 	if (c == "LIMITER") {
-		if (l == "On")   { return _("Limiteur de canal, référencé sur la SORTIE de la voie."); }
-		if (l == "Thr")  { return _("Plafond du limiteur."); }
-		if (l == "Att")  { return _("Temps de réaction. Très court = plus de tenue, mais plus de distorsion sur les basses."); }
-		if (l == "Hold") { return _("Gèle la réduction avant de relâcher."); }
-		if (l == "Rel")  { return _("Temps de relâchement de la limitation."); }
+		if (l == "On")   { return _("Channel limiter, referenced to the OUTPUT of the strip."); }
+		if (l == "Thr")  { return _("Limiter ceiling."); }
+		if (l == "Att")  { return _("Reaction time. Very short = more headroom held, but more distortion on low frequencies."); }
+		if (l == "Hold") { return _("Freezes the gain reduction before releasing."); }
+		if (l == "Rel")  { return _("Release time of the limiting."); }
 	}
 
 	if (c == "PCM") {
-		if (l == "In")  { return _("Niveau d'entrée du modèle PCM-1630 : c'est lui qui décide à quel point on attaque la capture."); }
-		if (l == "Out") { return _("Rattrapage de niveau en sortie du modèle."); }
-		if (l == "On")  { return _("Fait passer le master par le modèle du convertisseur PCM-1630. Éteint = chemin direct."); }
+		if (l == "In")  { return _("Input level into the PCM-1630 model: this is what decides how hard the capture is driven."); }
+		if (l == "Out") { return _("Output level trim after the model."); }
+		if (l == "On")  { return _("Runs the master through the PCM-1630 converter model. Off = direct path."); }
 	}
 	if (c == "OUTLIM") {
-		if (l == "Ceil") { return _("Plafond du limiteur de sortie, placé APRÈS le PCM-1630 pour rattraper les crêtes que la capture fait remonter."); }
-		if (l == "On")   { return _("Limiteur brickwall de sortie, dernier maillon avant les sorties physiques."); }
+		if (l == "Ceil") { return _("Ceiling of the output limiter, placed AFTER the PCM-1630 to catch the peaks the capture brings back up."); }
+		if (l == "On")   { return _("Output brickwall limiter, last link before the physical outputs."); }
 	}
 	return 0;
 }
@@ -490,7 +556,7 @@ OxfordConsolePanel::mkToggle (Gtk::Box& box, const char* lab, bool master,
 			apply_linked ([setfn, nv] (OxfordChannel& c) { setfn (c, nv); });   // Alt -> sélection
 			_toggles[idx].btn->set_active_state (nv ? Gtkmm2ext::ExplicitActive : Gtkmm2ext::Off);
 		}
-		_eq_curve.queue_draw ();   // refléter immédiatement (In/Shelf) sur le visualiseur
+		eqc ().queue_draw ();   // refléter immédiatement (In/Shelf) sur le visualiseur
 	});
 	/* carré coloré + libellé À DROITE (toujours lisible, jamais collé) */
 	Gtk::HBox* row = Gtk::manage (new Gtk::HBox ()); row->set_spacing (3);
@@ -512,38 +578,44 @@ OxfordConsolePanel::mkToggle (Gtk::Box& box, const char* lab, bool master,
 	return b;
 }
 
+/* Vue EQ. Même principe que la vue dynamique : DEUX conteneurs distincts, un
+ * pour les pistes (5 bandes + filtres à pente) et un pour les bus (LF/MF/HF
+ * seules, spec Return), au lieu de détacher des blocs d'un conteneur commun. */
 Gtk::Widget*
-OxfordConsolePanel::build_eq ()
+OxfordConsolePanel::build_eq (bool bus)
 {
 	Gtk::VBox* b = Gtk::manage (new Gtk::VBox ());
 	b->set_spacing (1);
+	Gtk::DrawingArea& curve = bus ? _eq_curveB : _eq_curve;
 
 	/* courbe de réponse en tête — pastilles draggables (freq/gain) + molette (Q) */
-	_eq_curve.set_size_request (-1, (int)(120*kUI));
-	ArdourWidgets::set_tooltip (_eq_curve, _("Réponse de l'égaliseur. Glisser une pastille règle la fréquence et le gain de sa bande, la molette règle le Q (l'overshoot en mode Shelf). Les pastilles crème sont les filtres : les glisser les enclenche, la molette change la pente. Alt : la sélection suit."));
-	_eq_curve.signal_expose_event ().connect (sigc::mem_fun (*this, &OxfordConsolePanel::on_eq_expose));
-	_eq_curve.add_events (Gdk::BUTTON_PRESS_MASK | Gdk::BUTTON_RELEASE_MASK
+	curve.set_size_request (-1, (int)(120*kUI));
+	ArdourWidgets::set_tooltip (curve, _("Equaliser response. Drag a dot to set the frequency and gain of its band, use the wheel for Q (overshoot in Shelf mode). The cream dots are the filters: dragging one engages it, the wheel changes its slope. Alt: the selection follows."));
+	curve.signal_expose_event ().connect (sigc::mem_fun (*this, &OxfordConsolePanel::on_eq_expose));
+	curve.add_events (Gdk::BUTTON_PRESS_MASK | Gdk::BUTTON_RELEASE_MASK
 	                    | Gdk::POINTER_MOTION_MASK | Gdk::SCROLL_MASK);
-	_eq_curve.signal_button_press_event ().connect (sigc::mem_fun (*this, &OxfordConsolePanel::on_eq_press));
-	_eq_curve.signal_button_release_event ().connect (sigc::mem_fun (*this, &OxfordConsolePanel::on_eq_release));
-	_eq_curve.signal_motion_notify_event ().connect (sigc::mem_fun (*this, &OxfordConsolePanel::on_eq_motion));
-	_eq_curve.signal_scroll_event ().connect (sigc::mem_fun (*this, &OxfordConsolePanel::on_eq_scroll));
-	b->pack_start (_eq_curve, Gtk::PACK_SHRINK);
+	curve.signal_button_press_event ().connect (sigc::mem_fun (*this, &OxfordConsolePanel::on_eq_press));
+	curve.signal_button_release_event ().connect (sigc::mem_fun (*this, &OxfordConsolePanel::on_eq_release));
+	curve.signal_motion_notify_event ().connect (sigc::mem_fun (*this, &OxfordConsolePanel::on_eq_motion));
+	curve.signal_scroll_event ().connect (sigc::mem_fun (*this, &OxfordConsolePanel::on_eq_scroll));
+	b->pack_start (curve, Gtk::PACK_SHRINK);
 
 	/* type de courbe + bascules shelf */
 	Gtk::HBox* opt = Gtk::manage (new Gtk::HBox ()); opt->set_spacing (2);
 	_curve_btn.set_text (curve_name (2));
 	_curve_btn.set_fixed_colors (0xc8e030ff, 0xc8c4b8ff);
 	_curve_btn.set_layout_font (Pango::FontDescription ("ArdourSans 10"));
-	_curve_btn.signal_clicked.connect ([this] () {
-		if (!_chan) { return; }
-		const int t = (_chan->curveType () + 1) % 5;
-		apply_linked ([t] (OxfordChannel& c) { c.setCurveType (t); });   // Alt -> sélection
-		_curve_btn.set_text (curve_name (t));
-	});
+	/* menu déroulant : on voit les 5 types d'un coup au lieu de les parcourir */
+	for (int t = 0; t < 5; ++t) {
+		_curve_btn.add_menu_elem (Gtk::Menu_Helpers::MenuElem (curve_name (t), [this, t] () {
+			if (!_chan) { return; }
+			apply_linked ([t] (OxfordChannel& c) { c.setCurveType (t); });   // Alt -> sélection
+			_curve_btn.set_text (curve_name (t));
+		}));
+	}
 	Gtk::Label* cl = Gtk::manage (new Gtk::Label (_("Curve"))); cl->set_alignment (0,0.5);
 	opt->pack_start (*cl, false, false);
-	ArdourWidgets::set_tooltip (_curve_btn, _("Type de courbe : la façon dont la largeur des cloches réagit au gain. 1 = Q constant, 2 = symétrique en boost et pincé en cut, 3 = modéré (réglage d'usine), 4 = fortement proportionnel."));
+	ArdourWidgets::set_tooltip (_curve_btn, _("Curve type: how bell width reacts to gain. 1 = constant Q, 2 = symmetric when boosting and pinched when cutting, 3 = moderate (factory setting), 4 = strongly proportional."));
 	opt->pack_start (_curve_btn, true, true);
 	b->pack_start (*opt, Gtk::PACK_SHRINK);
 
@@ -555,15 +627,17 @@ OxfordConsolePanel::build_eq ()
 	_hp_slope_btn.set_text (_("off"));
 	_hp_slope_btn.set_fixed_colors (0xc8e030ff, 0xc8c4b8ff);
 	_hp_slope_btn.set_layout_font (Pango::FontDescription ("ArdourSans 9")); _hp_slope_btn.set_size_request ((int)(28*kKnob), (int)(15*kKnob));
-	_hp_slope_btn.signal_clicked.connect ([this] () {
-		if (!_chan) { return; }
-		int s = _chan->hpfOn () ? (int) _chan->hpfSlope () : 0;
-		s += 6;
-		const bool  on    = (s <= 36);
-		const float slope = on ? (float) s : 12.f;
-		apply_linked ([on, slope] (OxfordChannel& c) { c.setHPF (on, c.hpfHz (), slope); });   // Alt -> sélection
-	});
-	ArdourWidgets::set_tooltip (_hp_slope_btn, _("Pente du passe-haut : clic pour parcourir off, 6, 12 … 36 dB/oct."));
+	for (int s = 0; s <= 36; s += 6) {
+		char sl[8]; std::snprintf (sl, sizeof sl, "%d", s);
+		const std::string lbl = s ? std::string (sl) : std::string (_("off"));
+		_hp_slope_btn.add_menu_elem (Gtk::Menu_Helpers::MenuElem (lbl, [this, s] () {
+			if (!_chan) { return; }
+			const bool  on    = (s > 0);
+			const float slope = on ? (float) s : 12.f;
+			apply_linked ([on, slope] (OxfordChannel& c) { c.setHPF (on, c.hpfHz (), slope); });   // Alt -> sélection
+		}));
+	}
+	ArdourWidgets::set_tooltip (_hp_slope_btn, _("High-pass slope: off, 6, 12 … 36 dB/oct."));
 	hp->pack_start (_hp_slope_btn, false, false);
 	hp->pack_start (*mk (20,400,80,_("Freq"),f_hz,false,-1,
 	    [](OxfordChannel& c,double v){ c.setHPF (c.hpfOn (), (float)v, c.hpfSlope ()); },
@@ -577,6 +651,7 @@ OxfordConsolePanel::build_eq ()
 	const char* bn[5] = { "LF","LMF","MF","HMF","HF" };
 	Gtk::VBox* bandbox = Gtk::manage (new Gtk::VBox ()); bandbox->set_spacing (10);   // bandes plus aérées
 	for (int i = 0; i < 5; ++i) {
+		if (bus && (i == 1 || i == 3)) { continue; }   // Return : LF/MF/HF seules
 		const int band = i; const double R=bandRGB[i][0], G=bandRGB[i][1], B=bandRGB[i][2];
 		Gtk::HBox* block = Gtk::manage (new Gtk::HBox ()); block->set_spacing (2); block->set_border_width (3);
 		Gtk::Label* l = Gtk::manage (new Gtk::Label ());
@@ -617,11 +692,9 @@ OxfordConsolePanel::build_eq ()
 		Gtk::Alignment* tgal = Gtk::manage (new Gtk::Alignment (0.0, 0.5, 0, 0)); tgal->add (*tgl);
 		block->pack_start (*tgal, false, false);
 		bandbox->pack_start (*block, Gtk::PACK_SHRINK);
-		if (i == 1 || i == 3) { reg_track_only (bandbox, block); }   // LMF/HMF absentes des Returns
 		if (i < 4) {
 			Gtk::HSeparator* sep = Gtk::manage (new Gtk::HSeparator ());
 			bandbox->pack_start (*sep, Gtk::PACK_SHRINK);
-			if (i == 1 || i == 3) { reg_track_only (bandbox, sep); }
 		}
 	}
 	Gtk::Frame* bandframe = Gtk::manage (new Gtk::Frame (_("EQUALISER")));
@@ -636,15 +709,17 @@ OxfordConsolePanel::build_eq ()
 	_lp_slope_btn.set_text (_("off"));
 	_lp_slope_btn.set_fixed_colors (0xc8e030ff, 0xc8c4b8ff);
 	_lp_slope_btn.set_layout_font (Pango::FontDescription ("ArdourSans 9")); _lp_slope_btn.set_size_request ((int)(28*kKnob), (int)(15*kKnob));
-	_lp_slope_btn.signal_clicked.connect ([this] () {
-		if (!_chan) { return; }
-		int s = _chan->lpfOn () ? (int) _chan->lpfSlope () : 0;
-		s += 6;
-		const bool  on    = (s <= 36);
-		const float slope = on ? (float) s : 12.f;
-		apply_linked ([on, slope] (OxfordChannel& c) { c.setLPF (on, c.lpfHz (), slope); });   // Alt -> sélection
-	});
-	ArdourWidgets::set_tooltip (_lp_slope_btn, _("Pente du passe-bas : clic pour parcourir off, 6, 12 … 36 dB/oct."));
+	for (int s = 0; s <= 36; s += 6) {
+		char sl[8]; std::snprintf (sl, sizeof sl, "%d", s);
+		const std::string lbl = s ? std::string (sl) : std::string (_("off"));
+		_lp_slope_btn.add_menu_elem (Gtk::Menu_Helpers::MenuElem (lbl, [this, s] () {
+			if (!_chan) { return; }
+			const bool  on    = (s > 0);
+			const float slope = on ? (float) s : 12.f;
+			apply_linked ([on, slope] (OxfordChannel& c) { c.setLPF (on, c.lpfHz (), slope); });   // Alt -> sélection
+		}));
+	}
+	ArdourWidgets::set_tooltip (_lp_slope_btn, _("Low-pass slope: off, 6, 12 … 36 dB/oct."));
 	lp->pack_start (_lp_slope_btn, false, false);
 	lp->pack_start (*mk (1000,20000,18000,_("Freq"),f_hz,false,-1,
 	    [](OxfordChannel& c,double v){ c.setLPF (c.lpfOn (), (float)v, c.lpfSlope ()); },
@@ -655,28 +730,35 @@ OxfordConsolePanel::build_eq ()
 	Gtk::HBox* filt = Gtk::manage (new Gtk::HBox ()); filt->set_spacing (4);
 	filt->pack_start (*hpf, true, true);
 	filt->pack_start (*lpf, true, true);
-	b->pack_start (*filt, Gtk::PACK_SHRINK);
-	reg_track_only (b, filt);   // pas de filtres à pente sur les Returns
+	if (!bus) { b->pack_start (*filt, Gtk::PACK_SHRINK); }   // pas de filtres à pente sur les Returns
 
 	return b;
 }
 
+/* Vue dynamique. DEUX vues DISTINCTES sont construites : une pour les pistes
+ * (Gate/Exp/Comp/Lim) et une pour les bus (Comp/Lim seulement). On BASCULE de
+ * l'une à l'autre au lieu de détacher des sections d'un conteneur commun :
+ * détacher laissait GTK conserver la hauteur libérée, d'où le grand vide en
+ * mode bus. Ici chaque conteneur naît avec exactement ce qu'il doit montrer,
+ * il n'y a donc plus rien à récupérer. */
 Gtk::Widget*
-OxfordConsolePanel::build_dyn ()
+OxfordConsolePanel::build_dyn (bool bus)
 {
 	Gtk::VBox* b = Gtk::manage (new Gtk::VBox ());
 	b->set_spacing (1);
+	Gtk::DrawingArea& curve  = bus ? _dyn_curveB  : _dyn_curve;
+	Gtk::DrawingArea& meters = bus ? _dyn_metersB : _dyn_meters;
 
 	/* graphe transfert IN/OUT PLEINE LARGEUR */
-	_dyn_curve.set_size_request (-1, (int)(105*kUI));
-	ArdourWidgets::set_tooltip (_dyn_curve, _("Courbe de transfert entrée/sortie des quatre sections réunies. Le point mobile est le niveau du détecteur ; les pointillés marquent les seuils."));
-	_dyn_curve.signal_expose_event ().connect (sigc::mem_fun (*this, &OxfordConsolePanel::on_dyn_expose));
-	b->pack_start (_dyn_curve, Gtk::PACK_SHRINK);
-	/* 4 VU de GR HORIZONTAUX (Gate/Exp/Comp/Lim) sous le graphe, barres fines (précis) */
-	_dyn_meters.set_size_request (-1, (int)(64*kUI));
-	ArdourWidgets::set_tooltip (_dyn_meters, _("Réduction de gain des quatre sections, 0 à 20 dB, avec maintien de crête."));
-	_dyn_meters.signal_expose_event ().connect (sigc::mem_fun (*this, &OxfordConsolePanel::on_dyn_meters_expose));
-	b->pack_start (_dyn_meters, Gtk::PACK_SHRINK);
+	curve.set_size_request (-1, (int)(105*kUI));
+	ArdourWidgets::set_tooltip (curve, _("Input/output transfer curve of the four sections combined. The moving dot is the detector level; the dotted lines mark the thresholds."));
+	curve.signal_expose_event ().connect (sigc::mem_fun (*this, bus ? &OxfordConsolePanel::on_dyn_exposeB : &OxfordConsolePanel::on_dyn_expose));
+	b->pack_start (curve, Gtk::PACK_SHRINK);
+	/* VU de GR HORIZONTAUX sous le graphe, barres fines (précis) */
+	meters.set_size_request (-1, (int)((bus ? 34 : 64)*kUI));
+	ArdourWidgets::set_tooltip (meters, _("Gain reduction of the four sections, 0 to 20 dB, with peak hold."));
+	meters.signal_expose_event ().connect (sigc::mem_fun (*this, bus ? &OxfordConsolePanel::on_dyn_metersB : &OxfordConsolePanel::on_dyn_meters_expose));
+	b->pack_start (meters, Gtk::PACK_SHRINK);
 
 	/* (Timing retiré de la GUI — non utilisé ; le DSP reste en loi Normal par défaut.) */
 
@@ -699,7 +781,7 @@ OxfordConsolePanel::build_dyn ()
 		bar->set_border_width (3);
 		Gtk::HBox* hd = Gtk::manage (new Gtk::HBox ()); hd->set_spacing (4);
 		Gtk::Label* l = Gtk::manage (new Gtk::Label ());
-		char m[96]; std::snprintf (m,sizeof m,"<b><span size=\"large\" foreground=\"%s\">%s</span></b>",color,name);
+		char m[96]; std::snprintf (m,sizeof m,"<b><span foreground=\"%s\">%s</span></b>",color,name);   /* pas de "large" : le titre poussait le bouton On hors du bord */
 		l->set_markup (m); l->set_alignment (0,0.5);
 		hd->pack_start (*l, true, true);
 		_tipctx = name;   /* les knobs de la section qui suit héritent du contexte */
@@ -714,6 +796,9 @@ OxfordConsolePanel::build_dyn ()
 		return col;
 	};
 
+	/* GATE et EXPANDER : pistes seulement (un gate sur une somme de groupe n'a
+	 * pas de sens) ; COMPRESSOR et LIMITER sont exposés aussi sur les bus. */
+	if (!bus) {
 	{ Gtk::VBox* c = section (_("GATE"), "#2e7d32", [](OxfordChannel& c,bool v){c.setGateOn(v);}, [](OxfordChannel& c){return c.gateOn();}, false);
 	  flow (c, {
 	    mk(-80,0,-80,_("Thr"),f_db,false,-1,[](OxfordChannel& c,double v){c.setGateThreshDb((float)v);},[](OxfordChannel& c){return (double)c.gateThreshDb();}),
@@ -721,13 +806,14 @@ OxfordConsolePanel::build_dyn ()
 	    mk(0.005,26,0.005,_("Att"),f_ms,false,-1,[](OxfordChannel& c,double v){c.setGateAttackMs((float)v);},[](OxfordChannel& c){return (double)c.gateAttackMs();}),
 	    mk(7.8,519,7.8,_("Rel"),f_ms,false,-1,[](OxfordChannel& c,double v){c.setGateReleaseMs((float)v);},[](OxfordChannel& c){return (double)c.gateReleaseMs();}) }); }
 
-	{ Gtk::VBox* c = section (_("EXPANDER"), "#1565c0", [](OxfordChannel& c,bool v){c.setExpOn(v);}, [](OxfordChannel& c){return c.expOn();}, true);
+	{ Gtk::VBox* c = section (_("EXPANDER"), "#1565c0", [](OxfordChannel& c,bool v){c.setExpOn(v);}, [](OxfordChannel& c){return c.expOn();}, false);
 	  flow (c, {
 	    mk(-60,0,0,_("Thr"),f_db,false,-1,[](OxfordChannel& c,double v){c.setExpThreshDb((float)v);},[](OxfordChannel& c){return (double)c.expThreshDb();}),
 	    mk(1,16,2,_("Rat"),f_rat,false,-1,[](OxfordChannel& c,double v){c.setExpRatio((float)v);},[](OxfordChannel& c){return (double)c.expRatio();}),
 	    mk(-80,0,-40,_("Rng"),f_db,false,-1,[](OxfordChannel& c,double v){c.setExpRangeDb((float)v);},[](OxfordChannel& c){return (double)c.expRangeDb();}),
 	    mk(0.26,104,5.2,_("Att"),f_ms,false,-1,[](OxfordChannel& c,double v){c.setExpAttackMs((float)v);},[](OxfordChannel& c){return (double)c.expAttackMs();}),
 	    mk(7.8,519,51.9,_("Rel"),f_ms,false,-1,[](OxfordChannel& c,double v){c.setExpReleaseMs((float)v);},[](OxfordChannel& c){return (double)c.expReleaseMs();}) }); }
+	}   /* fin des sections réservées aux pistes */
 
 	{ Gtk::VBox* c = section (_("COMPRESSOR"), "#b8860b", [](OxfordChannel& c,bool v){c.setCompOn(v);}, [](OxfordChannel& c){return c.compOn();}, false);
 	  /* Hold : gel de la réduction avant le release (spec OXF-R3 : 10 ms .. 30 s) */
@@ -742,7 +828,7 @@ OxfordConsolePanel::build_dyn ()
 	    mk(0,24,0,_("Mkp"),f_db,false,-1,[](OxfordChannel& c,double v){c.setCompMakeupDb((float)v);},[](OxfordChannel& c){return (double)c.compMakeupDb();}),
 	    mk(0,20,0,_("Soft"),f_db,false,-1,[](OxfordChannel& c,double v){c.setCompSoftDb((float)v);},[](OxfordChannel& c){return (double)c.compSoftDb();}) }); }
 
-	{ Gtk::VBox* c = section (_("LIMITER"), "#c62828", [](OxfordChannel& c,bool v){c.setLimOn(v);}, [](OxfordChannel& c){return c.limOn();}, true);
+	{ Gtk::VBox* c = section (_("LIMITER"), "#c62828", [](OxfordChannel& c,bool v){c.setLimOn(v);}, [](OxfordChannel& c){return c.limOn();}, false);
 	  /* Hold : spec OXF-R3 : 50 ms .. 30 s */
 	  TridentKnob* lhold = mk(50,30000,50,_("Hold"),f_ms,false,-1,[](OxfordChannel& c,double v){c.setLimHoldMs((float)v);},[](OxfordChannel& c){return (double)c.limHoldMs();});
 	  lhold->set_log (true);
@@ -784,7 +870,7 @@ OxfordConsolePanel::build_master ()
 		bar->set_border_width (3);
 		Gtk::HBox* hd = Gtk::manage (new Gtk::HBox ()); hd->set_spacing (4);
 		Gtk::Label* l = Gtk::manage (new Gtk::Label ());
-		char m[96]; std::snprintf (m,sizeof m,"<b><span size=\"large\" foreground=\"%s\">%s</span></b>",color,name);
+		char m[96]; std::snprintf (m,sizeof m,"<b><span foreground=\"%s\">%s</span></b>",color,name);   /* pas de "large" : le titre poussait le bouton On hors du bord */
 		l->set_markup (m); l->set_alignment (0,0.5);
 		hd->pack_start (*l, true, true);
 		if (son && gon) { mkToggle (*hd, _("On"), true, son, gon, "#1a2433"); }
@@ -832,13 +918,36 @@ OxfordConsolePanel::build_master ()
 		Gtk::VBox* c = section (_("OUT LIMITER"), "#c62828",
 		    [](OxfordChannel& ch,bool v){ch.setBusLimOn(v);},
 		    [](OxfordChannel& ch){return ch.busLimOn();});
+		TridentKnob* lrel = mk(0.05,3000,7.34,_("Rel"),f_ms,true,-1,
+		     [](OxfordChannel& ch,double v){ch.setBusLimRelMs((float)v);},
+		     [](OxfordChannel& ch){return (double)ch.busLimRelMs();}, 0.78,0.30,0.28);
+		lrel->set_log (true);
 		flow (c, {
-		  mk(-12,0,-0.3,_("Ceil"),f_db,true,-1,
+		  mk(-12,0,-0.3,_("Thresh"),f_db,true,-1,
 		     [](OxfordChannel& ch,double v){ch.setBusLimCeilDb((float)v);},
-		     [](OxfordChannel& ch){return (double)ch.busLimCeilDb();}, 0.78,0.30,0.28) });
-		_pcmlim_gr.set_markup (_("<span size=\"small\">GR —</span>"));
-		_pcmlim_gr.set_alignment (0.0, 0.5);
-		c->pack_start (_pcmlim_gr, Gtk::PACK_SHRINK);
+		     [](OxfordChannel& ch){return (double)ch.busLimCeilDb();}, 0.78,0.30,0.28),
+		  mk(0.05,5,0.052,_("Att"),f_ms,true,-1,
+		     [](OxfordChannel& ch,double v){ch.setBusLimAttMs((float)v);},
+		     [](OxfordChannel& ch){return (double)ch.busLimAttMs();}, 0.78,0.30,0.28),
+		  lrel,
+		  mk(0,10,0,_("Knee"),f_db,true,-1,
+		     [](OxfordChannel& ch,double v){ch.setBusLimKneeDb((float)v);},
+		     [](OxfordChannel& ch){return (double)ch.busLimKneeDb();}, 0.78,0.30,0.28),
+		  mk(0,125,0,_("Enh"),f_rat,true,-1,
+		     [](OxfordChannel& ch,double v){ch.setBusLimEnhance((float)v);},
+		     [](OxfordChannel& ch){return (double)ch.busLimEnhance();}, 0.78,0.30,0.28) });
+		mkToggle (*c, _("Safe"), true,
+		     [](OxfordChannel& ch,bool v){ch.setBusLimSafe(v);},
+		     [](OxfordChannel& ch){return ch.busLimSafe();});
+		mkToggle (*c, _("Auto-Comp"), true,
+		     [](OxfordChannel& ch,bool v){ch.setBusLimAutoComp(v);},
+		     [](OxfordChannel& ch){return ch.busLimAutoComp();});
+		/* Réduction et dépassement inter-échantillon en BARGRAPHS, du même type
+		 * que ceux de la section Dynamics : un chiffre écrit ne se lit pas d'un
+		 * coup d'œil pendant qu'on mixe. */
+		_outlim_bars.set_size_request (-1, (int)(34*kUI));
+		_outlim_bars.signal_expose_event ().connect (sigc::mem_fun (*this, &OxfordConsolePanel::on_outlim_expose));
+		c->pack_start (_outlim_bars, Gtk::PACK_SHRINK);
 	}
 
 	Gtk::Label* botpad = Gtk::manage (new Gtk::Label ()); botpad->set_size_request (1, 10);
@@ -867,8 +976,8 @@ void
 OxfordConsolePanel::show_view (int page)
 {
 	_nb.set_current_page (page);
-	_btn_eq.set_active_state     (page==0 ? Gtkmm2ext::ExplicitActive : Gtkmm2ext::Off);
-	_btn_dyn.set_active_state    (page==1 ? Gtkmm2ext::ExplicitActive : Gtkmm2ext::Off);
+	_btn_eq.set_active_state     ((page==0 || page==4) ? Gtkmm2ext::ExplicitActive : Gtkmm2ext::Off);
+	_btn_dyn.set_active_state    ((page==1 || page==3) ? Gtkmm2ext::ExplicitActive : Gtkmm2ext::Off);
 	_btn_master.set_active_state (page==2 ? Gtkmm2ext::ExplicitActive : Gtkmm2ext::Off);
 	if (page != 2) { _lastTrackPage = page; }   // page à restaurer en quittant le master
 }
@@ -950,8 +1059,8 @@ OxfordConsolePanel::refresh ()
 		_masterSelected = msel;
 		/* le bouton MASTER n'existe QUE sur la tranche master (la régie n'a rien
 		 * à faire depuis une piste), et EQ/DYN n'ont rien à piloter sur elle */
-		if (msel) { _btn_eq.hide (); _btn_dyn.hide (); _btn_master.show (); }
-		else      { _btn_master.hide (); _btn_eq.show (); _btn_dyn.show (); }
+		if (msel) { _btn_eq.hide (); _btn_dyn.hide (); _btn_master.show (); if (_panwid_box) _panwid_box->hide (); }
+		else      { _btn_master.hide (); _btn_eq.show (); _btn_dyn.show (); if (_panwid_box) _panwid_box->show (); }
 		show_view (msel ? 2 : _lastTrackPage);
 	}
 
@@ -960,6 +1069,10 @@ OxfordConsolePanel::refresh ()
 	if (isBus != _isBus) {
 		_isBus = isBus;
 		set_bus_mode (_isBus);
+		/* bascule vers la page dynamique correspondante si on y est */
+		const int cur = _nb.get_current_page ();
+		if (cur == 1 || cur == 3) { show_view (_isBus ? 3 : 1); }
+		else if (cur == 0 || cur == 4) { show_view (_isBus ? 4 : 0); }
 		/* ceinture : force le relayout complet du notebook et du châssis
 		 * (le viewport gardait parfois l'ancienne allocation) */
 		_nb.queue_resize ();
@@ -1028,17 +1141,16 @@ OxfordConsolePanel::refresh ()
 		_grPeak[i] = std::max (_grVals[i], _grPeak[i] - 0.6f);
 	}
 	_dyn_meters.queue_draw ();
-	/* réduction du limiteur de sortie (après PCM-1630) */
-	{
-		char t[48];
-		const float g = _master ? _master->limiterGrDb () : 0.f;
-		if (g > 0.05f) { std::snprintf (t, sizeof t, "<span size=\"small\">GR %.1f dB</span>", g); }
-		else           { std::snprintf (t, sizeof t, "<span size=\"small\">GR —</span>"); }
-		_pcmlim_gr.set_markup (t);
-	}
+	_dyn_metersB.queue_draw ();
+	/* limiteur de SORTIE : réduction et dépassement inter-échantillon (bargraphs) */
+	_outlimGr    = _master ? _master->busLimGrDb ()    : 0.f;
+	_outlimTp    = _master ? _master->busLimTruePeakDb () : -120.f;
+	_outlimCeil  = _master ? _master->busLimCeilDb () : -0.3f;
+	_outlim_bars.queue_draw ();
 	_updating = false;
-	_eq_curve.queue_draw ();
+	eqc ().queue_draw ();
 	_dyn_curve.queue_draw ();
+	_dyn_curveB.queue_draw ();
 }
 
 bool
@@ -1075,14 +1187,31 @@ OxfordConsolePanel::set_bus_mode (bool bus)
 }
 
 Gtk::Widget*
-OxfordConsolePanel::wrap_scroll (Gtk::Widget* w)
+OxfordConsolePanel::wrap_scroll (Gtk::Widget* w, bool hscroll)
 {
 	Gtk::EventBox* eb = Gtk::manage (new Gtk::EventBox ());
 	Gdk::Color c; c.set_rgb_p (kPanelBg[0], kPanelBg[1], kPanelBg[2]);
 	eb->modify_bg (Gtk::STATE_NORMAL, c);
+	/* la page couvre le châssis : elle doit porter la même tôle brossée,
+	 * sinon le fond texturé du panneau est masqué par un aplat */
+	eb->set_app_paintable (true);
+	eb->signal_expose_event ().connect ([eb] (GdkEventExpose*) -> bool {
+		Glib::RefPtr<Gdk::Window> win = eb->get_window ();
+		if (!win) { return false; }
+		Cairo::RefPtr<Cairo::Context> cr = win->create_cairo_context ();
+		Gtk::Allocation a = eb->get_allocation ();
+		trident_fill_panel (cr, 0, 0, a.get_width (), a.get_height (),
+		                    kPanelBg[0], kPanelBg[1], kPanelBg[2]);
+		return false;
+	}, false);
+	/* respiration en haut : la première rangée de potards touchait le bord
+	 * supérieur du châssis (et son joint) */
+	eb->set_border_width (10);
 	eb->add (*w);
 	Gtk::ScrolledWindow* sw = Gtk::manage (new Gtk::ScrolledWindow ());
-	sw->set_policy (Gtk::POLICY_NEVER, Gtk::POLICY_AUTOMATIC);
+	/* la régie d'Ardour est plus large que le panneau : sans défilement
+	 * horizontal, ses commandes (le On du limiteur par ex.) sont COUPÉES. */
+	sw->set_policy (hscroll ? Gtk::POLICY_AUTOMATIC : Gtk::POLICY_NEVER, Gtk::POLICY_AUTOMATIC);
 	sw->set_shadow_type (Gtk::SHADOW_NONE);
 	sw->add (*eb);
 	sw->modify_bg (Gtk::STATE_NORMAL, c);
@@ -1090,6 +1219,22 @@ OxfordConsolePanel::wrap_scroll (Gtk::Widget* w)
 	_chromeMain.push_back (sw);
 	if (Gtk::Widget* vp = sw->get_child ()) { vp->modify_bg (Gtk::STATE_NORMAL, c); _chromeMain.push_back (vp); }  // Viewport
 	return sw;
+}
+
+/* Châssis du panneau : tôle d'aluminium brossé, boulonnée en périphérie.
+ * L'aplat de couleur ne lisait pas comme du métal — il manquait le reflet
+ * diffus, les rayures de brossage et surtout le joint + la visserie. */
+bool
+OxfordConsolePanel::on_panel_expose (GdkEventExpose*)
+{
+	Glib::RefPtr<Gdk::Window> win = get_window ();
+	if (!win) { return false; }
+	Cairo::RefPtr<Cairo::Context> cr = win->create_cairo_context ();
+	Gtk::Allocation a = get_allocation ();
+	const double w = a.get_width (), h = a.get_height ();
+	trident_fill_panel (cr, 0, 0, w, h, kPanelBg[0], kPanelBg[1], kPanelBg[2]);
+	trident_plate_edge (cr, 0, 0, w, h, true, 2.0);
+	return false;   // laisse GTK propager l'expose aux enfants
 }
 
 /* Tuile BLEU CLAIR (sous-panneau) sur le châssis crème -> bi-ton façon console.
@@ -1100,6 +1245,18 @@ OxfordConsolePanel::subpanel (Gtk::Widget* w)
 	Gtk::EventBox* eb = Gtk::manage (new Gtk::EventBox ());
 	Gdk::Color c; c.set_rgb_p (kSubBg[0], kSubBg[1], kSubBg[2]);
 	eb->modify_bg (Gtk::STATE_NORMAL, c);
+	/* sous-panneau = plaque rapportée, brossée elle aussi, avec son joint */
+	eb->set_app_paintable (true);
+	eb->signal_expose_event ().connect ([eb] (GdkEventExpose*) -> bool {
+		Glib::RefPtr<Gdk::Window> win = eb->get_window ();
+		if (!win) { return false; }
+		Cairo::RefPtr<Cairo::Context> cr = win->create_cairo_context ();
+		Gtk::Allocation a = eb->get_allocation ();
+		trident_fill_panel (cr, 0, 0, a.get_width (), a.get_height (),
+		                    kSubBg[0], kSubBg[1], kSubBg[2]);
+		trident_plate_edge (cr, 0, 0, a.get_width (), a.get_height (), true, 1.0);
+		return false;
+	}, false);
 	eb->set_border_width (3);
 	_chromeSub.push_back (eb);
 	eb->add (*w);
@@ -1113,10 +1270,10 @@ OxfordConsolePanel::subpanel (Gtk::Widget* w)
 bool
 OxfordConsolePanel::on_eq_expose (GdkEventExpose*)
 {
-	Glib::RefPtr<Gdk::Window> win = _eq_curve.get_window ();
+	Glib::RefPtr<Gdk::Window> win = eqc ().get_window ();
 	if (!win) { return false; }
 	Cairo::RefPtr<Cairo::Context> cr = win->create_cairo_context ();
-	Gtk::Allocation a = _eq_curve.get_allocation ();
+	Gtk::Allocation a = eqc ().get_allocation ();
 	const double w = a.get_width (), h = a.get_height ();
 	screen_begin (cr, w, h);
 	const double fmin = 20.0, fmax = 20000.0;
@@ -1158,12 +1315,12 @@ OxfordConsolePanel::on_eq_expose (GdkEventExpose*)
 	cr->set_font_size (8.5);
 	cr->set_source_rgba (0.62,0.72,0.92,0.65);
 	const struct { double f; const char* t; } fl[] = { {100,"100"}, {1000,"1k"}, {10000,"10k"} };
-	for (auto& L : fl) { cr->move_to (xf(L.f)+3, h-7); cr->show_text (L.t); }
+	for (auto& L : fl) { cr->move_to (xf(L.f)+3, h-11); cr->show_text (L.t); }
 	{
 		const int lab = (S <= 10.0) ? 5 : ((S <= 20.0) ? 10 : 20);
 		char lt[8];
-		std::snprintf (lt, sizeof lt, "+%d", lab); cr->move_to (5, yf(lab)+3);  cr->show_text (lt);
-		std::snprintf (lt, sizeof lt, "-%d", lab); cr->move_to (5, yf(-lab)+3); cr->show_text (lt);
+		std::snprintf (lt, sizeof lt, "+%d", lab); cr->move_to (9, yf(lab)+3);  cr->show_text (lt);
+		std::snprintf (lt, sizeof lt, "-%d", lab); cr->move_to (9, yf(-lab)+3); cr->show_text (lt);
 	}
 	/* remplissage entre la courbe et 0 dB (dégradé orange translucide) */
 	cr->move_to (0, yf(resp[0]));
@@ -1181,16 +1338,17 @@ OxfordConsolePanel::on_eq_expose (GdkEventExpose*)
 	for (int i=1;i<=N;++i) cr->line_to ((double)i, yf(resp[(size_t)i]));
 	cr->set_source_rgba (0.941,0.659,0.188,0.20); cr->set_line_width (5.5); cr->stroke_preserve ();
 	cr->set_source_rgb (0.980,0.760,0.300); cr->set_line_width (2.0); cr->stroke ();
-	/* pastilles de bande = HANDLES : point coloré posé SUR la courbe à la fréquence
-	 * de la bande ; position mémorisée pour le hit-test (drag/molette). */
+	/* pastilles de bande = HANDLES : point coloré posé au gain PROPRE de la bande
+	 * (et non sur la courbe sommée — sinon engager un HPF fait dégringoler la
+	 * pastille LF avec la courbe), à la fréquence de la bande ; position
+	 * mémorisée pour le hit-test (drag/molette). */
 	if (_chan) {
 		OxfordChannel& c=*_chan;
 		for (int bnd=0;bnd<5;bnd++){
 			if (_isBus && (bnd==1 || bnd==3)) { _eq_dotv[bnd]=false; continue; }   // RETURN
 			if (!c.bandEnabled(bnd)) { _eq_dotv[bnd]=false; continue; }
 			const double x = xf ((double) c.bandFreq(bnd));
-			int i = (int)(x+0.5); if (i<0) i=0; if (i>N) i=N;
-			const double y = yf (resp[(size_t)i]);
+			const double y = yf ((double) c.bandGain(bnd));
 			_eq_dotx[bnd]=x; _eq_doty[bnd]=y; _eq_dotv[bnd]=true;
 			const bool drag = (bnd==_eq_drag);
 			if (drag) {   // halo de saisie
@@ -1201,7 +1359,8 @@ OxfordConsolePanel::on_eq_expose (GdkEventExpose*)
 			cr->set_source_rgb (bandRGB[bnd][0],bandRGB[bnd][1],bandRGB[bnd][2]); cr->fill_preserve ();
 			cr->set_source_rgba (1,1,1,0.85); cr->set_line_width (1.2); cr->stroke ();
 		}
-		/* handles HP/LP (crème) : posés sur la courbe à la fréquence de coupure ;
+		/* handles HP/LP (crème) : posés au coude de LEUR filtre (-3 dB quand
+		 * engagé, 0 dB sinon) et non sur la courbe sommée ;
 		 * translucides quand le filtre est OFF (le drag l'engage) */
 		const bool   fon[2] = { c.hpfOn (), c.lpfOn () };
 		const double ffq[2] = { (double) c.hpfHz (), (double) c.lpfHz () };
@@ -1209,8 +1368,7 @@ OxfordConsolePanel::on_eq_expose (GdkEventExpose*)
 		for (int k = 0; k < 2 && !_isBus; ++k) {
 			const int idx = 5 + k;
 			const double x = xf (ffq[k]);
-			int i = (int)(x+0.5); if (i<0) i=0; if (i>N) i=N;
-			const double y = yf (resp[(size_t)i]);
+			const double y = yf (fon[k] ? -3.0 : 0.0);
 			_eq_dotx[idx]=x; _eq_doty[idx]=y; _eq_dotv[idx]=true;
 			const bool drag = (idx==_eq_drag);
 			if (drag) {
@@ -1243,7 +1401,7 @@ OxfordConsolePanel::on_eq_expose (GdkEventExpose*)
 				cr->select_font_face ("monospace", Cairo::FONT_SLANT_NORMAL, Cairo::FONT_WEIGHT_BOLD);
 				cr->set_font_size (10.0);
 				cr->set_source_rgb (rr, gg, bb);
-				cr->move_to (8, 15); cr->show_text (t);
+				cr->move_to (11, 18); cr->show_text (t);
 			}
 		}
 	} else {
@@ -1272,14 +1430,14 @@ OxfordConsolePanel::on_eq_press (GdkEventButton* ev)
 {
 	if (!_chan || ev->button != 1) { return false; }
 	const int b = eq_dot_at (ev->x, ev->y);
-	if (b >= 0) { _eq_drag = b; _eq_curve.queue_draw (); return true; }
+	if (b >= 0) { _eq_drag = b; eqc ().queue_draw (); return true; }
 	return false;
 }
 
 bool
 OxfordConsolePanel::on_eq_release (GdkEventButton*)
 {
-	if (_eq_drag >= 0) { _eq_drag = -1; _eq_curve.queue_draw (); return true; }
+	if (_eq_drag >= 0) { _eq_drag = -1; eqc ().queue_draw (); return true; }
 	return false;
 }
 
@@ -1289,14 +1447,14 @@ OxfordConsolePanel::on_eq_motion (GdkEventMotion* ev)
 	if (!_chan) { return false; }
 	if (_eq_drag < 0) {
 		/* curseur main au survol d'une pastille */
-		if (Glib::RefPtr<Gdk::Window> win = _eq_curve.get_window ()) {
+		if (Glib::RefPtr<Gdk::Window> win = eqc ().get_window ()) {
 			if (eq_dot_at (ev->x, ev->y) >= 0) { Gdk::Cursor cur (Gdk::HAND2); win->set_cursor (cur); }
 			else                               { win->set_cursor (); }
 		}
 		return false;
 	}
 	const int b = _eq_drag;
-	Gtk::Allocation a = _eq_curve.get_allocation ();
+	Gtk::Allocation a = eqc ().get_allocation ();
 	const double w = a.get_width (), h = a.get_height ();
 	/* x -> fréquence (échelle log de l'écran) */
 	const double fmin = 20.0, fmax = 20000.0;
@@ -1305,14 +1463,14 @@ OxfordConsolePanel::on_eq_motion (GdkEventMotion* ev)
 		if (f < 20.0)  f = 20.0;
 		if (f > 400.0) f = 400.0;
 		apply_linked ([f] (OxfordChannel& c) { c.setHPF (true, (float) f, c.hpfOn () ? c.hpfSlope () : 12.f); });   // Alt -> sélection
-		_eq_curve.queue_draw ();
+		eqc ().queue_draw ();
 		return true;
 	}
 	if (b == 6) {           /* LPF : idem (1k-20k) */
 		if (f < 1000.0)  f = 1000.0;
 		if (f > 20000.0) f = 20000.0;
 		apply_linked ([f] (OxfordChannel& c) { c.setLPF (true, (float) f, c.lpfOn () ? c.lpfSlope () : 12.f); });   // Alt -> sélection
-		_eq_curve.queue_draw ();
+		eqc ().queue_draw ();
 		return true;
 	}
 	/* bandes : freq bornée aux plages OXF-R3 de la bande */
@@ -1323,7 +1481,7 @@ OxfordConsolePanel::on_eq_motion (GdkEventMotion* ev)
 	if (g < -20.0) g = -20.0;
 	if (g >  20.0) g =  20.0;
 	apply_linked ([b, f, g] (OxfordChannel& c) { c.setBandFreq (b, (float) f); c.setBandGain (b, (float) g); });   // Alt -> sélection
-	_eq_curve.queue_draw ();
+	eqc ().queue_draw ();
 	return true;
 }
 
@@ -1345,7 +1503,7 @@ OxfordConsolePanel::on_eq_scroll (GdkEventScroll* ev)
 		const float slope = non ? (float) s : 12.f;
 		if (b == 5) { apply_linked ([non, slope] (OxfordChannel& c) { c.setHPF (non, c.hpfHz (), slope); }); }   // Alt -> sélection
 		else        { apply_linked ([non, slope] (OxfordChannel& c) { c.setLPF (non, c.lpfHz (), slope); }); }
-		_eq_curve.queue_draw ();
+		eqc ().queue_draw ();
 		return true;
 	}
 	const double step = up ? 1.12 : 1.0 / 1.12;
@@ -1359,7 +1517,7 @@ OxfordConsolePanel::on_eq_scroll (GdkEventScroll* ev)
 		if      (b == 0 && c.lfShelf ()) { c.setLFOvershoot (o); }
 		else if (b == 4 && c.hfShelf ()) { c.setHFOvershoot (o); }
 	});
-	_eq_curve.queue_draw ();
+	eqc ().queue_draw ();
 	return true;
 }
 
@@ -1367,13 +1525,34 @@ OxfordConsolePanel::on_eq_scroll (GdkEventScroll* ev)
  * Expander, Compresseur, Limiteur) reconstituée avec les MÊMES lois que le DSP,
  * + un POINT MOBILE posé sur la courbe à la position du signal (niveau du
  * détecteur -> sortie correspondante). Échelle -80..0 dB (le Gate descend à -80). */
+/* Les deux pages dynamiques (piste et bus) ont chacune leur graphe et leurs VU :
+ * un widget ne peut pas être empaqueté deux fois. Le dessin est commun, seul le
+ * widget cible change. */
+bool
+OxfordConsolePanel::on_dyn_exposeB (GdkEventExpose* e)
+{
+	return dyn_curve_draw (_dyn_curveB);
+}
+
+bool
+OxfordConsolePanel::on_dyn_metersB (GdkEventExpose* e)
+{
+	return dyn_meters_draw (_dyn_metersB);
+}
+
 bool
 OxfordConsolePanel::on_dyn_expose (GdkEventExpose*)
 {
-	Glib::RefPtr<Gdk::Window> win = _dyn_curve.get_window ();
+	return dyn_curve_draw (_dyn_curve);
+}
+
+bool
+OxfordConsolePanel::dyn_curve_draw (Gtk::DrawingArea& area)
+{
+	Glib::RefPtr<Gdk::Window> win = area.get_window ();
 	if (!win) { return false; }
 	Cairo::RefPtr<Cairo::Context> cr = win->create_cairo_context ();
-	Gtk::Allocation a = _dyn_curve.get_allocation ();
+	Gtk::Allocation a = area.get_allocation ();
 	const double w = a.get_width (), h = a.get_height ();
 	screen_begin (cr, w, h);
 	const double LO = -80.0;                                   // bas d'échelle des 2 axes
@@ -1385,12 +1564,12 @@ OxfordConsolePanel::on_dyn_expose (GdkEventExpose*)
 	cr->select_font_face ("ArdourSans", Cairo::FONT_SLANT_NORMAL, Cairo::FONT_WEIGHT_NORMAL);
 	cr->set_font_size (8.5);
 	cr->set_source_rgba (0.62,0.72,0.92,0.65);
-	cr->move_to (X(-60)+2, h-6);  cr->show_text ("-60");
-	cr->move_to (X(-40)+2, h-6);  cr->show_text ("-40");
-	cr->move_to (X(-20)+2, h-6);  cr->show_text ("-20");
-	cr->move_to (4, Y(-20)-3);    cr->show_text ("-20");
-	cr->move_to (4, Y(-40)-3);    cr->show_text ("-40");
-	cr->move_to (4, Y(-60)-3);    cr->show_text ("-60");
+	cr->move_to (X(-60)+2, h-10);  cr->show_text ("-60");
+	cr->move_to (X(-40)+2, h-10);  cr->show_text ("-40");
+	cr->move_to (X(-20)+2, h-10);  cr->show_text ("-20");
+	cr->move_to (8, Y(-20)-3);    cr->show_text ("-20");
+	cr->move_to (8, Y(-40)-3);    cr->show_text ("-40");
+	cr->move_to (8, Y(-60)-3);    cr->show_text ("-60");
 	/* diagonale 1:1 de référence */
 	cr->set_source_rgba (1,1,1,0.22); cr->move_to(X(LO),Y(LO)); cr->line_to(X(0),Y(0)); cr->stroke();
 
@@ -1516,28 +1695,40 @@ OxfordConsolePanel::on_dyn_expose (GdkEventExpose*)
 bool
 OxfordConsolePanel::on_dyn_meters_expose (GdkEventExpose*)
 {
-	Glib::RefPtr<Gdk::Window> win = _dyn_meters.get_window ();
+	return dyn_meters_draw (_dyn_meters);
+}
+
+bool
+OxfordConsolePanel::dyn_meters_draw (Gtk::DrawingArea& area)
+{
+	Glib::RefPtr<Gdk::Window> win = area.get_window ();
 	if (!win) { return false; }
 	Cairo::RefPtr<Cairo::Context> cr = win->create_cairo_context ();
-	Gtk::Allocation a = _dyn_meters.get_allocation ();
+	Gtk::Allocation a = area.get_allocation ();
 	const double w = a.get_width (), h = a.get_height ();
 	cr->set_source_rgb (kPanelBg[0], kPanelBg[1], kPanelBg[2]); cr->paint ();
-	const char* lbl[4] = { "GATE", "EXP", "COMP", "LIM" };
+	/* Sur un BUS, le gate et l'expandeur n'existent pas : afficher leurs rangées
+	 * laissait deux bargraphs morts en permanence. On ne montre alors que les
+	 * deux sections réellement présentes. */
+	static const char* kAll[4] = { "GATE", "EXP", "COMP", "LIM" };
+	const int first = _isBus ? 2 : 0;
+	const int nrow  = 4 - first;
+	const char* const* lbl = &kAll[first];
 	const double tickh = 11.0;                       // bandeau d'échelle en bas
-	const double rowh = (h - tickh) / 4.0, lblw = 38.0, maxgr = 20.0;
+	const double rowh = (h - tickh) / (double) nrow, lblw = 38.0, maxgr = 20.0;
 	const int NSEG = 20; const double gap = 1.0;
 	double bx = lblw, bw = w - lblw - 34.0;
 	cr->select_font_face ("monospace", Cairo::FONT_SLANT_NORMAL, Cairo::FONT_WEIGHT_BOLD);
 	cr->set_font_size (8.0);
-	for (int i = 0; i < 4; ++i) {
+	for (int i = 0; i < nrow; ++i) {
 		const double y = i * rowh + 1.0, bh = rowh - 3.0;
 		cr->set_source_rgb (kLabelDk[0], kLabelDk[1], kLabelDk[2]);
 		cr->move_to (2.0, y + bh - 2.0); cr->show_text (lbl[i]);
 		/* puits du bargraph (arrondi, fond profond) */
 		rrect (cr, bx - 1.5, y - 1.0, bw + 3.0, bh + 2.0, 2.5);
 		cr->set_source_rgb (0.06, 0.08, 0.11); cr->fill ();
-		double gr = _grVals[i]; if (gr < 0) gr = 0; if (gr > maxgr) gr = maxgr;
-		double pk = _grPeak[i]; if (pk < 0) pk = 0; if (pk > maxgr) pk = maxgr;
+		double gr = _grVals[first+i]; if (gr < 0) gr = 0; if (gr > maxgr) gr = maxgr;
+		double pk = _grPeak[first+i]; if (pk < 0) pk = 0; if (pk > maxgr) pk = maxgr;
 		/* 20 segments discrets (VU OXF-R3) : segments ÉTEINTS visibles en sombre */
 		const double segw = (bw - (NSEG - 1) * gap) / NSEG;
 		const int lit  = (int) std::ceil ((gr / maxgr) * NSEG);
@@ -1569,6 +1760,68 @@ OxfordConsolePanel::on_dyn_meters_expose (GdkEventExpose*)
 		char t[8]; std::snprintf (t, sizeof t, "%d", d);
 		Cairo::TextExtents te; cr->get_text_extents (t, te);
 		cr->move_to (x - te.width * 0.5, 4 * rowh + tickh - 2.0); cr->show_text (t);
+	}
+	return true;
+}
+
+/* Bargraphs du limiteur de sortie : réduction de gain et dépassement des crêtes
+ * inter-échantillons (Recon), dessinés comme ceux de la section Dynamics. */
+bool
+OxfordConsolePanel::on_outlim_expose (GdkEventExpose*)
+{
+	Glib::RefPtr<Gdk::Window> win = _outlim_bars.get_window ();
+	if (!win) { return false; }
+	Cairo::RefPtr<Cairo::Context> cr = win->create_cairo_context ();
+	Gtk::Allocation a = _outlim_bars.get_allocation ();
+	const double w = a.get_width (), h = a.get_height ();
+	trident_fill_panel (cr, 0, 0, w, h, kPanelBg[0], kPanelBg[1], kPanelBg[2]);
+
+	/* Rangée 2 = NIVEAU DE SORTIE en crête réelle, repéré par rapport au plafond
+	 * (0 = plafond). Un simple « de combien ça dépasse » restait à zéro tant que
+	 * tout allait bien et n'apprenait rien ; là on voit en permanence où on est,
+	 * et le dépassement devient la zone rouge. */
+	const char*  lbl[2] = { "GR", "OUT" };
+	const double rel = (double) _outlimTp - (double) _outlimCeil;   // dB par rapport au plafond
+	const double val[2] = { (double) _outlimGr, rel + 24.0 };       // -24..+3 -> 0..27
+	const double maxv[2] = { 20.0, 27.0 };
+	const double lblw = 40.0, rowh = h / 2.0;
+	const int    NSEG = 20; const double gap = 1.0;
+	const double bx = lblw, bw = w - lblw - 6.0;
+
+	cr->select_font_face ("monospace", Cairo::FONT_SLANT_NORMAL, Cairo::FONT_WEIGHT_BOLD);
+	cr->set_font_size (8.5);
+	for (int i = 0; i < 2; ++i) {
+		const double y = i * rowh + 2.0, bh = rowh - 5.0;
+		cr->set_source_rgb (kLabelDk[0], kLabelDk[1], kLabelDk[2]);
+		cr->move_to (2.0, y + bh - 1.0); cr->show_text (lbl[i]);
+		rrect (cr, bx - 1.5, y - 1.0, bw + 3.0, bh + 2.0, 2.5);
+		cr->set_source_rgb (0.06, 0.08, 0.11); cr->fill ();
+		double v = val[i]; if (v < 0) v = 0; if (v > maxv[i]) v = maxv[i];
+		const double segw = (bw - (NSEG - 1) * gap) / NSEG;
+		const int lit = (int) std::ceil ((v / maxv[i]) * NSEG);
+		for (int s = 0; s < NSEG; ++s) {
+			double r, g, b;
+			if (i == 1) {
+				/* Rangée OUT : la couleur suit la valeur en dB du segment, pas sa
+				 * position relative. Le rouge ne s'allume que si le BAS du segment
+				 * est AU-DESSUS du plafond — sinon un signal simplement collé au
+				 * plafond (ce que fait un limiteur en fonctionnement normal, a
+				 * fortiori avec l'Enhance) allumerait le rouge en permanence. */
+				const double lowDb = (double) s / NSEG * maxv[1] - 24.0;   // dB par rapport au plafond
+				if      (lowDb >= 0.0)  { r = 0.90; g = 0.25; b = 0.20; }  // dépassement
+				else if (lowDb >= -6.0) { r = 0.90; g = 0.80; b = 0.20; }  // approche
+				else                    { r = 0.20; g = 0.80; b = 0.30; }
+			} else {
+				const double frac = (double) s / (NSEG - 1);
+				if      (frac < 0.60) { r = 0.20; g = 0.80; b = 0.30; }
+				else if (frac < 0.85) { r = 0.90; g = 0.80; b = 0.20; }
+				else                  { r = 0.90; g = 0.25; b = 0.20; }
+			}
+			const bool on = (s < lit);
+			cr->set_source_rgba (r, g, b, on ? 1.0 : 0.13);
+			cr->rectangle (bx + s * (segw + gap), y, segw, bh);
+			cr->fill ();
+		}
 	}
 	return true;
 }

@@ -191,6 +191,13 @@ MixerStrip::init ()
 	route_ops_menu = 0;
 	_width_owner = 0;
 
+	/* OXFORD : la tranche est une tôle d'aluminium brossé, comme le panneau
+	 * console — sans ça elle restait un aplat et jurait à côté de lui.
+	 * set_app_paintable empêche GTK de repeindre son fond par-dessus ; le
+	 * handler retourne false pour que l'expose continue vers les enfants. */
+	set_app_paintable (true);
+	signal_expose_event ().connect (sigc::mem_fun (*this, &MixerStrip::on_strip_expose), false);
+
 	_tmaster = new TriggerMaster (_tmaster_widget.root ());
 
 	/* the length of this string determines the width of the mixer strip when it is set to `wide' */
@@ -1661,6 +1668,21 @@ MixerStrip::dpi_reset ()
 	set_width_enum (_width, _width_owner);
 	_scrollbar_spacer_height = 0;
 	update_spacer ();
+}
+
+/* Fond de tranche = tôle brossée, dans la couleur de fond du THÈME courant
+ * (on ne fige aucune teinte : la tranche suit Oxford clair / Warm / Night). */
+bool
+MixerStrip::on_strip_expose (GdkEventExpose*)
+{
+	Glib::RefPtr<Gdk::Window> win = get_window ();
+	if (!win) { return false; }
+	Cairo::RefPtr<Cairo::Context> cr = win->create_cairo_context ();
+	Gtk::Allocation a = get_allocation ();
+	Gdk::Color c = get_style ()->get_bg (get_state ());
+	trident_fill_panel (cr, 0, 0, a.get_width (), a.get_height (),
+	                    c.get_red_p (), c.get_green_p (), c.get_blue_p ());
+	return false;   // laisse GTK propager l'expose aux enfants
 }
 
 void

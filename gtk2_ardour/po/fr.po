@@ -27975,3 +27975,145 @@ msgstr "Fichier vidéo d'entrée"
 
 #~ msgid "This is a BETA RELEASE"
 #~ msgstr "Ceci est une VERSION BETA"
+
+# --- Panneau console Oxford : infobulles ---
+msgid "Band frequency. Drag to set; the matching dot moves along the curve."
+msgstr "Fréquence de la bande. Glisser pour régler ; la pastille correspondante bouge sur la courbe."
+
+msgid "Bell width: 0.5 = very wide, 16 = surgical. With the band in Shelf mode, this knob becomes the OVERSHOOT (corner resonance)."
+msgstr "Largeur de la cloche : 0,5 = très large, 16 = chirurgical. Bande en mode Shelf, ce potard devient l'OVERSHOOT (résonance du coude)."
+
+msgid "Band boost or cut, ±20 dB. The width follows the selected curve type."
+msgstr "Boost ou atténuation de la bande, ±20 dB. La largeur suit le type de courbe choisi."
+
+msgid "Enables the band. When off it is removed from the computation (no residual colouration)."
+msgstr "Active la bande. Éteinte, elle est retirée du calcul (aucune coloration résiduelle)."
+
+msgid "Switches the band from a bell to a shelf. The Q knob then drives the overshoot."
+msgstr "Passe la bande en plateau au lieu d'une cloche. Le potard Q pilote alors l'overshoot."
+
+msgid "High-pass frequency (20–400 Hz). The slope is set with the button on the left."
+msgstr "Fréquence du passe-haut (20–400 Hz). La pente se règle par le bouton à gauche."
+
+msgid "Low-pass frequency (1–20 kHz). The slope is set with the button on the left."
+msgstr "Fréquence du passe-bas (1–20 kHz). La pente se règle par le bouton à gauche."
+
+msgid "Noise gate: cuts below the threshold, with 4 dB of hysteresis to avoid chattering."
+msgstr "Porte de bruit : coupe sous le seuil, avec hystérésis de 4 dB pour ne pas hacher."
+
+msgid "Level at which the gate opens."
+msgstr "Seuil d'ouverture de la porte."
+
+msgid "Attenuation applied while the gate is closed. −80 dB = hard cut, −20 dB = mere darkening."
+msgstr "Atténuation appliquée porte fermée. −80 dB = coupure franche, −20 dB = simple assombrissement."
+
+msgid "Opening time. Very short for transients (drums), longer to avoid clicks."
+msgstr "Temps d'ouverture. Très court pour les transitoires (batterie), plus long pour éviter les clics."
+
+msgid "Closing time once the signal falls below the threshold."
+msgstr "Temps de refermeture après passage sous le seuil."
+
+msgid "Expander: instead of cutting abruptly like the gate, it gradually pushes down whatever sits below the threshold."
+msgstr "Expandeur : au lieu de couper net comme la porte, il descend progressivement ce qui est sous le seuil."
+
+msgid "Level below which expansion acts."
+msgstr "Seuil sous lequel l'expansion agit."
+
+msgid "Expansion ratio. 2 = 2 dB down for every dB below the threshold."
+msgstr "Taux d'expansion. 2 = 2 dB de descente par dB sous le seuil."
+
+msgid "Maximum attenuation the expander may apply."
+msgstr "Atténuation maximale que l'expandeur peut appliquer."
+
+msgid "Time to return to unity gain once the signal rises back above the threshold."
+msgstr "Temps de retour au gain nominal quand le signal repasse au-dessus du seuil."
+
+msgid "Time to pull down once the signal falls below the threshold."
+msgstr "Temps de descente quand le signal passe sous le seuil."
+
+msgid "Feed-forward compressor, detector in dB, with shared look-ahead."
+msgstr "Compresseur feed-forward, détecteur en dB, avec look-ahead partagé."
+
+msgid "Compression threshold: above it, gain reduction applies."
+msgstr "Seuil de compression : au-dessus, la réduction s'applique."
+
+msgid "Ratio, using the console's 1/Ratio law: fully up = limiter. The displayed value is the real X:1."
+msgstr "Taux, en loi 1/Ratio comme la console : à fond = limiteur. La valeur affichée est le X:1 réel."
+
+msgid "Time for the gain reduction to build up."
+msgstr "Temps d'établissement de la réduction."
+
+msgid "Freezes the gain reduction for this long before releasing: avoids pumping on uneven material."
+msgstr "Gèle la réduction pendant ce temps avant de relâcher : évite le pompage sur les signaux irréguliers."
+
+msgid "Time to return to unity gain once the signal has come back down."
+msgstr "Temps de retour au gain nominal une fois le signal redescendu."
+
+msgid "Make-up gain, up to +24 dB, to recover the level lost to compression."
+msgstr "Gain de compensation, jusqu'à +24 dB, pour retrouver le niveau perdu."
+
+msgid "Knee width: 0 = hard corner, 20 = very progressive compression around the threshold."
+msgstr "Largeur du genou : 0 = coude franc, 20 = compression très progressive autour du seuil."
+
+msgid "Channel limiter, referenced to the OUTPUT of the strip."
+msgstr "Limiteur de canal, référencé sur la SORTIE de la voie."
+
+msgid "Limiter ceiling."
+msgstr "Plafond du limiteur."
+
+msgid "Reaction time. Very short = more headroom held, but more distortion on low frequencies."
+msgstr "Temps de réaction. Très court = plus de tenue, mais plus de distorsion sur les basses."
+
+msgid "Freezes the gain reduction before releasing."
+msgstr "Gèle la réduction avant de relâcher."
+
+msgid "Release time of the limiting."
+msgstr "Temps de relâchement de la limitation."
+
+msgid "Input level into the PCM-1630 model: this is what decides how hard the capture is driven."
+msgstr "Niveau d'entrée du modèle PCM-1630 : c'est lui qui décide à quel point on attaque la capture."
+
+msgid "Output level trim after the model."
+msgstr "Rattrapage de niveau en sortie du modèle."
+
+msgid "Runs the master through the PCM-1630 converter model. Off = direct path."
+msgstr "Fait passer le master par le modèle du convertisseur PCM-1630. Éteint = chemin direct."
+
+msgid "Ceiling of the output limiter, placed AFTER the PCM-1630 to catch the peaks the capture brings back up."
+msgstr "Plafond du limiteur de sortie, placé APRÈS le PCM-1630 pour rattraper les crêtes que la capture fait remonter."
+
+msgid "Output brickwall limiter, last link before the physical outputs."
+msgstr "Limiteur brickwall de sortie, dernier maillon avant les sorties physiques."
+
+msgid "Track panning. Alt + drag applies the same offset to the selected tracks."
+msgstr "Panoramique de la piste. Alt + glisser applique le même écart aux pistes sélectionnées."
+
+msgid "Stereo width of the strip (M/S processing). Hidden on mono tracks."
+msgstr "Largeur stéréo de la voie (traitement M/S). Masqué sur les pistes mono."
+
+msgid "Five-band equaliser and filters of the selected strip."
+msgstr "Égaliseur 5 bandes + filtres de la voie sélectionnée."
+
+msgid "Gate, expander, compressor and limiter of the selected strip."
+msgstr "Gate, expandeur, compresseur et limiteur de la voie sélectionnée."
+
+msgid "Control room: monitor section, PCM-1630 model and output limiter."
+msgstr "Régie : section Monitor, modèle PCM-1630 et limiteur de sortie."
+
+msgid "Equaliser response. Drag a dot to set the frequency and gain of its band, use the wheel for Q (overshoot in Shelf mode). The cream dots are the filters: dragging one engages it, the wheel changes its slope. Alt: the selection follows."
+msgstr "Réponse de l'égaliseur. Glisser une pastille règle la fréquence et le gain de sa bande, la molette règle le Q (l'overshoot en mode Shelf). Les pastilles crème sont les filtres : les glisser les enclenche, la molette change la pente. Alt : la sélection suit."
+
+msgid "Curve type: how bell width reacts to gain. 1 = constant Q, 2 = symmetric when boosting and pinched when cutting, 3 = moderate (factory setting), 4 = strongly proportional."
+msgstr "Type de courbe : la façon dont la largeur des cloches réagit au gain. 1 = Q constant, 2 = symétrique en boost et pincé en cut, 3 = modéré (réglage d'usine), 4 = fortement proportionnel."
+
+msgid "High-pass slope: off, 6, 12 … 36 dB/oct."
+msgstr "Pente du passe-haut : off, 6, 12 … 36 dB/oct."
+
+msgid "Low-pass slope: off, 6, 12 … 36 dB/oct."
+msgstr "Pente du passe-bas : off, 6, 12 … 36 dB/oct."
+
+msgid "Input/output transfer curve of the four sections combined. The moving dot is the detector level; the dotted lines mark the thresholds."
+msgstr "Courbe de transfert entrée/sortie des quatre sections réunies. Le point mobile est le niveau du détecteur ; les pointillés marquent les seuils."
+
+msgid "Gain reduction of the four sections, 0 to 20 dB, with peak hold."
+msgstr "Réduction de gain des quatre sections, 0 à 20 dB, avec maintien de crête."

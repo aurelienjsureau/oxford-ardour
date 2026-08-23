@@ -138,6 +138,16 @@ public:
 	/* ================ Limiter brickwall master (Bus) ================ */
 	void setBusLimOn (bool on){_busLimOn.store(on);_dirty.store(true);} bool busLimOn() const{return _busLimOn.load();}
 	void setBusLimCeilDb(float v){_busLimCeil.store(v);_dirty.store(true);} float busLimCeilDb() const{return _busLimCeil.load();}
+	void setBusLimAttMs(float v){_busLimAtt.store(v);_dirty.store(true);} float busLimAttMs() const{return _busLimAtt.load();}
+	void setBusLimRelMs(float v){_busLimRel.store(v);_dirty.store(true);} float busLimRelMs() const{return _busLimRel.load();}
+	void setBusLimKneeDb(float v){_busLimKnee.store(v);_dirty.store(true);} float busLimKneeDb() const{return _busLimKnee.load();}
+	void setBusLimEnhance(float v){_busLimEnh.store(v);_dirty.store(true);} float busLimEnhance() const{return _busLimEnh.load();}
+	void setBusLimSafe(bool on){_busLimSafe.store(on);_dirty.store(true);} bool busLimSafe() const{return _busLimSafe.load();}
+	void setBusLimAutoComp(bool on){_busLimAC.store(on);_dirty.store(true);} bool busLimAutoComp() const{return _busLimAC.load();}
+	float busLimTruePeakDb ();
+	/* mesures du limiteur de sortie (lecture GUI) */
+	float busLimGrDb ();
+	float busLimReconDb ();
 
 	/* ====== MasterTape PCM-1630 (stage Dac) : trims autour du réseau NAM ======
 	 * In = attaque du modèle (reculer pour désaturer), Out = compensation. */
@@ -216,6 +226,12 @@ private:
 	/* ---- Limiter master ---- */
 	std::atomic<bool>  _busLimOn { false };
 	std::atomic<float> _busLimCeil { -0.3f };
+	std::atomic<float> _busLimAtt  { 0.052f };   /* défaut Sonnox */
+	std::atomic<float> _busLimRel  { 7.34f };    /* défaut Sonnox */
+	std::atomic<float> _busLimKnee { 0.0f };
+	std::atomic<float> _busLimEnh  { 0.0f };
+	std::atomic<bool>  _busLimSafe { false };
+	std::atomic<bool>  _busLimAC   { false };
 	std::atomic<bool>  _fxBus { false };
 
 	/* ---- MasterTape PCM-1630 (stage Dac) ---- */

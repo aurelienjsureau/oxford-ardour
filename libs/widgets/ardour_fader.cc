@@ -338,6 +338,38 @@ ArdourFader::render (Cairo::RefPtr<Cairo::Context> const& ctx, cairo_rectangle_t
 		cairo_fill (cr);
 	}
 
+	/* --- Oxford : la glissière est un CANAL FRAISÉ dans la tôle ---
+	 * biseau creusé (lumière en haut-gauche comme partout ailleurs) : paroi
+	 * sombre du côté éclairé, lèvre claire du côté opposé. Sans ça, la bande
+	 * du fader reste un aplat posé sur le panneau. */
+	{
+		cairo_save (cr);
+		Gtkmm2ext::rounded_rectangle (cr, tx, ty, tw, th, CORNER_RADIUS);
+		cairo_clip (cr);
+		cairo_pattern_t* rec = (_orien == VERT)
+			? cairo_pattern_create_linear (tx, ty, tx + tw, ty)
+			: cairo_pattern_create_linear (tx, ty, tx, ty + th);
+		cairo_pattern_add_color_stop_rgba (rec, 0.00, 0, 0, 0, 0.38);
+		cairo_pattern_add_color_stop_rgba (rec, 0.32, 0, 0, 0, 0.0);
+		cairo_pattern_add_color_stop_rgba (rec, 0.78, 1, 1, 1, 0.0);
+		cairo_pattern_add_color_stop_rgba (rec, 1.00, 1, 1, 1, 0.16);
+		cairo_set_source (cr, rec);
+		cairo_rectangle (cr, tx, ty, tw, th);
+		cairo_fill (cr);
+		cairo_pattern_destroy (rec);
+		/* ombre portée du bord haut du canal (le métal surplombe la rainure) */
+		cairo_pattern_t* lip = (_orien == VERT)
+			? cairo_pattern_create_linear (tx, ty, tx, ty + 4.0)
+			: cairo_pattern_create_linear (tx, ty, tx + 4.0, ty);
+		cairo_pattern_add_color_stop_rgba (lip, 0.0, 0, 0, 0, 0.34);
+		cairo_pattern_add_color_stop_rgba (lip, 1.0, 0, 0, 0, 0.0);
+		cairo_set_source (cr, lip);
+		cairo_rectangle (cr, tx, ty, _orien == VERT ? tw : 4.0, _orien == VERT ? 4.0 : th);
+		cairo_fill (cr);
+		cairo_pattern_destroy (lip);
+		cairo_restore (cr);
+	}
+
 	/* --- Trident : poignée de fader RECTANGULAIRE (réf Mixbus 80B) ---
 	 *   corps #b0b4b8, filet haut 1px #d0d4d8, filet bas 1px ombre #606468. */
 	{
@@ -367,6 +399,21 @@ ArdourFader::render (Cairo::RefPtr<Cairo::Context> const& ctx, cairo_rectangle_t
 			cairo_scale (cr, sc, sc);
 			cairo_set_source_surface (cr, _handle_img->cobj (), 0, 0);
 			cairo_paint (cr);
+			cairo_restore (cr);
+			/* plastique moulé : léger spéculaire en haut, arête basse assombrie.
+			 * Dosé bas — l'image du cap porte déjà son propre modelé. */
+			cairo_save (cr);
+			cairo_rectangle (cr, x0, top, cap_w, cap_h);
+			cairo_clip (cr);
+			{
+				cairo_pattern_t* sp = cairo_pattern_create_linear (x0, top, x0, top + cap_h);
+				cairo_pattern_add_color_stop_rgba (sp, 0.00, 1, 1, 1, 0.18);
+				cairo_pattern_add_color_stop_rgba (sp, 0.42, 1, 1, 1, 0.02);
+				cairo_pattern_add_color_stop_rgba (sp, 1.00, 0, 0, 0, 0.14);
+				cairo_set_source (cr, sp);
+				cairo_paint (cr);
+				cairo_pattern_destroy (sp);
+			}
 			cairo_restore (cr);
 		} else if (_orien == VERT) {
 			const double cap_h = 16.0;

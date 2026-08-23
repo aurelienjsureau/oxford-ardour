@@ -88,6 +88,30 @@ protected:
 			cr->set_source (_img, -iw / 2.0, -ih / 2.0);
 			cr->paint ();
 			cr->restore ();
+			/* --- plastique moulé : reflet spéculaire en haut-gauche + assombri
+			 *     du bord bas-droit, peints PAR-DESSUS l'image (elle est plate) --- */
+			cr->save ();
+			cr->arc (cx, cy, Rimg, 0, 2 * M_PI);
+			cr->clip ();
+			{
+				Cairo::RefPtr<Cairo::RadialGradient> spec =
+					Cairo::RadialGradient::create (cx - Rimg * 0.34, cy - Rimg * 0.40, 0.0,
+					                               cx - Rimg * 0.34, cy - Rimg * 0.40, Rimg * 0.80);
+				spec->add_color_stop_rgba (0.0, 1.0, 1.0, 1.0, 0.26);
+				spec->add_color_stop_rgba (0.5, 1.0, 1.0, 1.0, 0.09);
+				spec->add_color_stop_rgba (1.0, 1.0, 1.0, 1.0, 0.0);
+				cr->set_source (spec);
+				cr->paint ();
+			}
+			{
+				Cairo::RefPtr<Cairo::RadialGradient> rim =
+					Cairo::RadialGradient::create (cx, cy, Rimg * 0.62, cx, cy, Rimg);
+				rim->add_color_stop_rgba (0.0, 0.0, 0.0, 0.0, 0.0);
+				rim->add_color_stop_rgba (1.0, 0.0, 0.0, 0.0, 0.22);
+				cr->set_source (rim);
+				cr->paint ();
+			}
+			cr->restore ();
 			/* repère de valeur (tourne) : BLANC, repoussé vers la collerette du cap */
 			const double r1 = Rimg * 0.34, r2 = Rimg * 0.66;
 			const double ca = std::cos (ang), sa = std::sin (ang);
@@ -161,16 +185,25 @@ protected:
 		cr->stroke ();
 		}  /* fin du rendu procédural (sinon image) */
 
-		/* --- label sérigraphie (mono condensé) : couleur adaptative au fond --- */
+		/* --- label = sérigraphie GRAVÉE dans le métal : le texte sombre est
+		 *     doublé d'un liseré clair 1 px EN DESSOUS (lumière en haut-gauche,
+		 *     donc le fond du sillon renvoie la lumière par le bas). --- */
 		cr->select_font_face ("ArdourMono", Cairo::FONT_SLANT_NORMAL, Cairo::FONT_WEIGHT_NORMAL);
 		cr->set_font_size (8.0);
-		{ const double lum = 0.299 * _bgr + 0.587 * _bgg + 0.114 * _bgb;
-		  if (lum > 0.5) cr->set_source_rgb (0.11, 0.14, 0.20);   // fond clair -> texte sombre
-		  else           cr->set_source_rgb (0.86, 0.89, 0.93); } // fond foncé -> texte clair
 		{
 			Cairo::TextExtents te; cr->get_text_extents (_label, te);
-			cr->move_to (cx - te.width * 0.5, 51.0);
-			cr->show_text (_label);
+			const double tx = cx - te.width * 0.5, ty = 51.0;
+			const double lum = 0.299 * _bgr + 0.587 * _bgg + 0.114 * _bgb;
+			if (lum > 0.5) {
+				cr->set_source_rgba (1.0, 1.0, 1.0, 0.55);          // reflet du sillon
+				cr->move_to (tx, ty + 1.0); cr->show_text (_label);
+				cr->set_source_rgb (0.11, 0.14, 0.20);              // creux
+			} else {
+				cr->set_source_rgba (0.0, 0.0, 0.0, 0.45);
+				cr->move_to (tx, ty + 1.0); cr->show_text (_label);
+				cr->set_source_rgb (0.86, 0.89, 0.93);
+			}
+			cr->move_to (tx, ty); cr->show_text (_label);
 		}
 
 		/* --- afficheur LED : boîte noire + valeur vert-jaune (#c8e030) mono --- */
@@ -178,20 +211,58 @@ protected:
 		if (_fmt) { val = _fmt (_val); }
 		else { char b[24]; std::snprintf (b, sizeof b, "%.1f", _val); val = b; }
 		const double lx = 3.0, ly = 58.0, lw = w - 6.0, lh = 15.0, rr = 3.5;
-		cr->set_source_rgb (0.035, 0.035, 0.035);
-		cr->move_to (lx + rr, ly);
-		cr->line_to (lx + lw - rr, ly);            cr->arc (lx + lw - rr, ly + rr, rr, -M_PI / 2, 0);
-		cr->line_to (lx + lw, ly + lh - rr);       cr->arc (lx + lw - rr, ly + lh - rr, rr, 0, M_PI / 2);
-		cr->line_to (lx + rr, ly + lh);            cr->arc (lx + rr, ly + lh - rr, rr, M_PI / 2, M_PI);
-		cr->line_to (lx, ly + rr);                 cr->arc (lx + rr, ly + rr, rr, M_PI, 3 * M_PI / 2);
-		cr->close_path (); cr->fill ();
-		cr->set_source_rgb (_dragging ? 1.0 : 0.784, _dragging ? 1.0 : 0.878, _dragging ? 0.4 : 0.188);
+		/* chemin de la vitre (réutilisé pour le fond, le clip et le liseré) */
+		auto glass_path = [&] () {
+			cr->move_to (lx + rr, ly);
+			cr->line_to (lx + lw - rr, ly);            cr->arc (lx + lw - rr, ly + rr, rr, -M_PI / 2, 0);
+			cr->line_to (lx + lw, ly + lh - rr);       cr->arc (lx + lw - rr, ly + lh - rr, rr, 0, M_PI / 2);
+			cr->line_to (lx + rr, ly + lh);            cr->arc (lx + rr, ly + lh - rr, rr, M_PI / 2, M_PI);
+			cr->line_to (lx, ly + rr);                 cr->arc (lx + rr, ly + rr, rr, M_PI, 3 * M_PI / 2);
+			cr->close_path ();
+		};
+		/* vitre teintée VERT très sombre (pas du noir pur) : c'est le filtre
+		 * coloré devant les segments qui donne sa couleur à un vrai afficheur */
+		glass_path ();
+		{
+			Cairo::RefPtr<Cairo::LinearGradient> gg = Cairo::LinearGradient::create (0, ly, 0, ly + lh);
+			gg->add_color_stop_rgb (0.0, 0.030, 0.052, 0.030);
+			gg->add_color_stop_rgb (1.0, 0.016, 0.030, 0.016);
+			cr->set_source (gg); cr->fill_preserve ();
+		}
+		cr->set_source_rgba (0, 0, 0, 0.85); cr->set_line_width (1.0); cr->stroke ();
+		/* ombre interne en haut : la vitre est en retrait dans le métal */
+		cr->save ();
+		glass_path (); cr->clip ();
+		{
+			Cairo::RefPtr<Cairo::LinearGradient> sh = Cairo::LinearGradient::create (0, ly, 0, ly + 5.0);
+			sh->add_color_stop_rgba (0.0, 0, 0, 0, 0.55);
+			sh->add_color_stop_rgba (1.0, 0, 0, 0, 0.0);
+			cr->set_source (sh); cr->rectangle (lx, ly, lw, 5.0); cr->fill ();
+		}
 		cr->set_font_size (9.0);
 		{
 			Cairo::TextExtents te; cr->get_text_extents (val, te);
-			cr->move_to (cx - te.width * 0.5, ly + lh - 4.0);
-			cr->show_text (val);
+			const double tx = cx - te.width * 0.5, ty = ly + lh - 4.0;
+			/* halo : le phosphore déborde légèrement des segments */
+			cr->set_source_rgba (_dragging ? 1.0 : 0.784, _dragging ? 1.0 : 0.878,
+			                     _dragging ? 0.4 : 0.188, 0.22);
+			cr->set_font_size (10.6);
+			{
+				Cairo::TextExtents he; cr->get_text_extents (val, he);
+				cr->move_to (cx - he.width * 0.5, ty + 0.6); cr->show_text (val);
+			}
+			cr->set_font_size (9.0);
+			cr->set_source_rgb (_dragging ? 1.0 : 0.784, _dragging ? 1.0 : 0.878, _dragging ? 0.4 : 0.188);
+			cr->move_to (tx, ty); cr->show_text (val);
 		}
+		/* reflet de la vitre, en haut à gauche comme le reste de l'éclairage */
+		{
+			Cairo::RefPtr<Cairo::LinearGradient> rf = Cairo::LinearGradient::create (0, ly, 0, ly + lh * 0.55);
+			rf->add_color_stop_rgba (0.0, 1, 1, 1, 0.085);
+			rf->add_color_stop_rgba (1.0, 1, 1, 1, 0.0);
+			cr->set_source (rf); cr->rectangle (lx, ly, lw * 0.72, lh * 0.55); cr->fill ();
+		}
+		cr->restore ();
 		return true;
 	}
 

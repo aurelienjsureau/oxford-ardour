@@ -233,6 +233,22 @@ OxfordTimer::popup_menu (GdkEventButton* ev)
 	Menu* m = manage (new Menu);
 	MenuList& items = m->items ();
 
+	/* Décompte en un clic : c'est l'usage courant (« 45 minutes sur ce morceau »),
+	 * il ne doit pas obliger à passer par une boîte de dialogue ni à nommer une
+	 * tâche. La tâche nommée reste disponible juste en dessous. */
+	{
+		Menu* cd = manage (new Menu);
+		MenuList& ci = cd->items ();
+		static const int mins[] = { 5, 10, 15, 20, 30, 45, 60, 90 };
+		for (int m : mins) {
+			char lbl[32];
+			std::snprintf (lbl, sizeof lbl, m < 60 ? _("%d min") : _("%d min"), m);
+			ci.push_back (MenuElem (lbl, sigc::bind (sigc::mem_fun (*this, &OxfordTimer::start_countdown), (double) m * 60.0)));
+		}
+		ci.push_back (SeparatorElem ());
+		ci.push_back (MenuElem (_("Durée personnalisée…"), sigc::mem_fun (*this, &OxfordTimer::new_task_dialog)));
+		items.push_back (MenuElem (_("Minuteur"), *cd));
+	}
 	items.push_back (MenuElem (_("Nouvelle tâche…"), sigc::mem_fun (*this, &OxfordTimer::new_task_dialog)));
 	items.push_back (SeparatorElem ());
 	items.push_back (MenuElem (_("Démarrer / Pause"), sigc::mem_fun (*this, &OxfordTimer::toggle_run)));
@@ -244,9 +260,9 @@ OxfordTimer::popup_menu (GdkEventButton* ev)
 		MenuList& mi = mm->items ();
 		mi.push_back (MenuElem (std::string (_mode == Billing   ? "• " : "  ") + _("Facturation (temps sur la session)"),
 		                        sigc::bind (sigc::mem_fun (*this, &OxfordTimer::set_mode), Billing)));
-		mi.push_back (MenuElem (std::string (_mode == Stopwatch ? "• " : "  ") + _("Chrono"),
+		mi.push_back (MenuElem (std::string (_mode == Stopwatch ? "• " : "  ") + _("Chronomètre (monte)"),
 		                        sigc::bind (sigc::mem_fun (*this, &OxfordTimer::set_mode), Stopwatch)));
-		mi.push_back (MenuElem (std::string (_mode == Countdown ? "• " : "  ") + _("Minuteur"),
+		mi.push_back (MenuElem (std::string (_mode == Countdown ? "• " : "  ") + _("Minuteur (descend)"),
 		                        sigc::bind (sigc::mem_fun (*this, &OxfordTimer::set_mode), Countdown)));
 		items.push_back (MenuElem (_("Mode"), *mm));
 	}
@@ -467,4 +483,14 @@ OxfordTimer::show_history ()
 	d.add_button (Gtk::Stock::CLOSE, Gtk::RESPONSE_CLOSE);
 	d.show_all ();
 	d.run ();
+}
+
+void
+OxfordTimer::start_countdown (double seconds)
+{
+	/* décompte immédiat : pas de nom, pas de dialogue. La tâche est nommée
+	 * d'après sa durée pour rester lisible dans l'historique de session. */
+	char n[32];
+	std::snprintf (n, sizeof n, "%.0f min", seconds / 60.0);
+	start_task (n, seconds);
 }

@@ -53,8 +53,8 @@ public:
     void setTimingLaw(TimingLaw l)
     {
         law = l;
-        if (law == Classic) {                  // timings figés façon DBX 160 (VCA)
-            compAtt = 0.0008; compRel = 0.150; // ~0.8 ms / 150 ms
+        if (law == Classic) {                  // timings FIGÉS (mesurés sur le plugin)
+            compAtt = 0.010; compRel = 0.330;  // ~10 ms / 330 ms
         }
         recalcAll();
     }
@@ -149,8 +149,11 @@ public:
         // --- 1) GATE (downward sous le seuil) avec hystérésis +4 dB ---
         if (gateOn)
         {
-            const double openThr  = gateThr;
-            const double closeThr = gateThr - 4.0;   // hystérésis : il faut +4 dB pour rouvrir
+            // Mesuré sur le plugin Sonnox : la porte OUVRE à thr+4 dB et
+            // FERME au seuil (fenêtre d'hystérésis de 4 dB posée AU-DESSUS du
+            // seuil, pas en dessous — on ouvrait 4 dB trop tôt).
+            const double openThr  = gateThr + 4.0;
+            const double closeThr = gateThr;
             if (!gateOpen && levelDb >= openThr)  gateOpen = true;
             else if (gateOpen && levelDb < closeThr) gateOpen = false;
             const double target = gateOpen ? 0.0 : gateRange;
@@ -173,10 +176,15 @@ public:
         if (compOn)
         {
             const double over = levelDb - compThr;
-            const double knee = (compSoft > 0.0 ? compSoft : 3.0);   // soft ratio -> largeur de knee
+            // Soft Ratio = DEMI-largeur du genou : mesuré sur le plugin Sonnox,
+            // le genou s'étend de thr-compSoft à thr+compSoft (largeur totale
+            // 2·compSoft). À 0 le genou est DUR (il n'y a pas de genou doux
+            // résiduel — l'ancien repli à 3 dB était une invention).
+            const double knee = 2.0 * compSoft;
             const double slope = 1.0 - 1.0 / compRatio;
             double red;                                              // réduction (>=0) avant signe
-            if (over <= -knee * 0.5)      red = 0.0;
+            if (knee <= 0.0)              red = over > 0.0 ? over * slope : 0.0;
+            else if (over <= -knee * 0.5) red = 0.0;
             else if (over >=  knee * 0.5) red = over * slope;
             else { const double t = (over + knee * 0.5); red = (t * t / (2.0 * knee)) * slope; }
             const double target = -red;                             // gain dB (<=0)
@@ -240,7 +248,7 @@ private:
     void recalcExp()  { expAttC  = rc(expAtt);  expRelC  = rc(expRel);  expAStep  = step(expAtt);  expRStep  = step(expRel);  }
     void recalcAll()  { recalcComp(); recalcLim(); recalcGate(); recalcExp(); }
 
-    static constexpr double kRefExc = 20.0;     // excursion de référence pour la loi Linear (dB)
+    static constexpr double kRefExc = 10.0;     // excursion de référence pour la loi Linear (dB, mesurée sur le plugin)
     static constexpr int    kMaxDelay = 4096;   // look-ahead max (~85 ms @48k)
 
     double sampleRate { 48000.0 };

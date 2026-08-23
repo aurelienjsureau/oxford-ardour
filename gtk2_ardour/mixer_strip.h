@@ -175,6 +175,7 @@ protected:
 private:
 	Mixer_UI& _mixer;
 
+	bool on_strip_expose (GdkEventExpose*);
 	void init ();
 
 	bool  _embedded;

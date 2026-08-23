@@ -16,6 +16,7 @@
 #include "OxfordDynamics.h"
 #include "OxfordWarmth.h"
 #include "OxfordConverter.h"
+#include "OxfordLimiter.h"
 #include "MasterTapePCM1630.h"
 #include <cmath>
 #include <string>
@@ -37,8 +38,8 @@ public:
         comp.setGateEnabled(false);
         comp.setExpEnabled(false);
         level = 0.0;
-        limGain = 1.0;
-        limRelC = std::exp(-1.0 / (0.050 * sampleRate));
+        lim.prepare(sr);
+
     }
 
     OxfordDynamics& busComp()   { return comp;   }   // Thr/Ratio/Att/Rel/Makeup, lois de timing
@@ -47,12 +48,13 @@ public:
 
     void setCompEnabled(bool on)   { compOn = on; }
     void setWarmthEnabled(bool on) { warmthOn = on; warmth.setEnabled(on); }
-    void setLimiterEnabled(bool on){ limOn = on; }
-    void setLimiterCeilingDb(double dB) { limCeil = std::pow(10.0, dB / 20.0); }
+    void setLimiterEnabled(bool on){ limOn = on; lim.setEnabled(on); }
+    OxfordLimiter& outLimiter() { return lim; }   // reglages complets + mesures
+    void setLimiterCeilingDb(double dB) { lim.setCeilingDb(dB); }
 
     float  outLevel()        const { return (float) level; }
     double gainReductionDb() const { return compOn ? comp.compReductionDb() : 0.0; }
-    double limiterReductionDb() const { return (limOn && limGain < 1.0) ? -20.0 * std::log10(limGain) : 0.0; }
+    double limiterReductionDb() const { return limOn ? lim.gainReductionDb() : 0.0; }
 
     double processSample(double x) noexcept
     {
@@ -62,6 +64,7 @@ public:
         if (stage == Dac)
         {
             s = conv.processSample(s);     // micro-distorsion DAC, toujours active
+            if (limOn) s = lim.processSample(s);   // limiteur de sortie : TOUT DERNIER
             trackLevel(s);
             return s;
         }
@@ -72,8 +75,11 @@ public:
         if (stage == Tail)
         {
             if (warmthOn) s = warmth.processSample(s);
-            if (limOn)    s = limiter(s);
             s = conv.processSample(s);     // micro-distorsion convertisseur OXF-R3
+            /* PAS de limiteur ici : il vit dans l'étage Dac, APRÈS le PCM-1630.
+             * Le modèle du 1630 recrée des crêtes ; limiter avant lui les
+             * laisserait ressortir. (Et le limiteur portant l'Enhance, en avoir
+             * deux en série appliquerait l'inflation deux fois.) */
             trackLevel(s);
             return s;
         }
@@ -84,7 +90,7 @@ public:
         if (stage == Full)   // bus simple : sommation propre + colorations OPTIONNELLES
         {
             if (warmthOn) s = warmth.processSample(s);
-            if (limOn)    s = limiter(s);
+            if (limOn)    s = lim.processSample(s);
             trackLevel(s);
         }
         return s;
@@ -109,16 +115,16 @@ public:
             masterTape.processBlock(d, n);
             for (int i = 0; i < n; ++i) {
                 double s = d[i];
-                if (limOn) s = limiter(s);
+                if (limOn) s = lim.processSample(s);
                 trackLevel(s);
                 d[i] = (float) s;
             }
         } else if (stage == Tail) {
-            // Tail master : warmth -> limiteur -> CONVERTISSEUR (le NAM est un module à part, en aval).
+            // Tail master : warmth -> CONVERTISSEUR. Le limiteur n'est PAS ici :
+            // il est dans l'étage Dac, après le PCM-1630 (cf. processSample).
             for (int i = 0; i < n; ++i) {
                 double s = d[i];
                 if (warmthOn) s = warmth.processSample(s);
-                if (limOn)    s = limiter(s);
                 s = conv.processSample(s);
                 trackLevel(s);
                 d[i] = (float) s;
@@ -139,7 +145,7 @@ public:
         if (stage == Full)
         {
             if (warmthOn) s = warmth.processSample(s);
-            if (limOn)    s = limiter(s);
+            if (limOn)    s = lim.processSample(s);
             trackLevel(s);
         }
         return s;
@@ -147,14 +153,6 @@ public:
     bool   compEnabled() const noexcept { return compOn; }
 
 private:
-    double limiter(double s) noexcept
-    {
-        const double mag = std::fabs(s);
-        const double need = (mag > limCeil && mag > 1e-12) ? (limCeil / mag) : 1.0;
-        if (need < limGain) limGain = need;
-        else                limGain = limRelC * limGain + (1.0 - limRelC) * need;
-        return s * limGain;
-    }
     void trackLevel(double s) noexcept
     {
         const double a = std::fabs(s);
@@ -164,11 +162,11 @@ private:
     Stage  stage { Full };
     double sampleRate { 48000.0 };
     bool   compOn { false }, warmthOn { false }, limOn { false };
-    double limCeil { 0.985 }, limGain { 1.0 }, limRelC { 0.0 };
     double level { 0.0 };
 
     OxfordDynamics comp;
     OxfordWarmth   warmth;
+    OxfordLimiter  lim;       // limiteur de SORTIE, modelé sur l'Oxford Limiter
     OxfordConverter conv;     // DAC : toujours actif sur le master (Tail)
     MasterTapePCM1630 masterTape;   // module NAM PCM-1630 (Tail uniquement)
 };

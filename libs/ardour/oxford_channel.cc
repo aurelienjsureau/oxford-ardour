@@ -150,9 +150,13 @@ OxfordChannel::applyParams ()
 			tp.setGrain    (_tapeGrain.load ());
 		}
 	} else {
-		/* ---- Canal RETURN (bus simple, stage Full) : spec OXF-R3 "Return Channels" =
-		 * EQ 3 bandes LF/MF/HF (peak/shelf, PAS de LMF/HMF ni de filtres à pente)
-		 * + Gate + Compresseur (PAS d'expander ni de limiteur). Tape jamais. ---- */
+		/* ---- Canal RETURN (bus simple, stage Full) : EQ 3 bandes LF/MF/HF
+		 * (peak/shelf, PAS de LMF/HMF ni de filtres à pente) + Compresseur et
+		 * Limiteur. Tape jamais.
+		 * NB : la spec OXF-R3 des Return donnait Gate + Comp, mais un gate sur
+		 * une somme de groupe ne sert à rien (il se pose sur la source) alors
+		 * qu'un limiteur de bus rattrape les crêtes du groupe -> Gate et
+		 * Expander forcés OFF ici, Limiteur exposé à la place. ---- */
 		for (auto& s : _strips) {
 			OxfordEQ& eq = s.equaliser ();
 			eq.setEQEnabled (_eqOn.load ());
@@ -172,11 +176,7 @@ OxfordChannel::applyParams ()
 			OxfordDynamics& d = s.dynamics ();
 			d.setTimingLaw ((OxfordDynamics::TimingLaw) _timingLaw.load ());
 			d.setLookaheadMs (_lookMs.load ());
-			d.setGateEnabled (_gateOn.load ());
-			d.setGateThresholdDb (_gateThr.load ());
-			d.setGateRangeDb (_gateRange.load ());
-			d.setGateAttackMs (_gateAtt.load ());
-			d.setGateReleaseMs (_gateRel.load ());
+			d.setGateEnabled (false);
 			d.setExpEnabled (false);
 			d.setCompEnabled (_compOn.load ());
 			d.setCompThreshold (_compThr.load ());
@@ -186,7 +186,11 @@ OxfordChannel::applyParams ()
 			d.setCompHoldMs (_compHold.load ());
 			d.setCompReleaseMs (_compRel.load ());
 			d.setCompSoftRatioDb (_compSoft.load ());
-			d.setLimEnabled (false);
+			d.setLimEnabled (_limOn.load ());
+			d.setLimThresholdDb (_limThr.load ());
+			d.setLimAttackMs (_limAtt.load ());
+			d.setLimHoldMs (_limHold.load ());
+			d.setLimReleaseMs (_limRel.load ());
 
 			s.setWarmthEnabled (false);   // le Warmth de bus vit dans OxfordBus
 			s.setTapeEnabled (false);     // un return ne passe pas par le magnéto
@@ -210,9 +214,16 @@ OxfordChannel::applyParams ()
 			/* OXFORD : pas de tape/coloration de bus (sommation propre, ≠ Mixbus) ;
 			 * la micro-distorsion convertisseur est automatique sur le master (Tail). */
 
-			/* ---- Limiter master ---- */
+			/* ---- Limiteur de SORTIE (modèle Oxford Limiter) ---- */
 			b.setLimiterEnabled (_busLimOn.load ());
 			b.setLimiterCeilingDb (_busLimCeil.load ());
+			OxfordLimiter& ol = b.outLimiter ();
+			ol.setAttackMs  (_busLimAtt.load ());
+			ol.setReleaseMs (_busLimRel.load ());
+			ol.setKneeDb    (_busLimKnee.load ());
+			ol.setEnhance   (_busLimEnh.load ());
+			ol.setSafeMode  (_busLimSafe.load ());
+			ol.setAutoComp  (_busLimAC.load ());
 
 			/* ---- MasterTape PCM-1630 (stage Dac) : trims In/Out du NAM ---- */
 			if (_stage == OxfordBus::Dac) {
@@ -239,6 +250,30 @@ OxfordChannel::gainReductionDb ()
 	for (auto& s : _strips) { const float g = (float) s.dynamics ().compReductionDb (); if (g > gr) gr = g; }
 	for (auto& b : _buses)  { const float g = (float) b.gainReductionDb ();              if (g > gr) gr = g; }
 	return gr;
+}
+
+float
+OxfordChannel::busLimGrDb ()
+{
+	float gr = 0.f;
+	for (auto& b : _buses) { const float g = (float) b.outLimiter ().gainReductionDb (); if (g > gr) gr = g; }
+	return gr;
+}
+
+float
+OxfordChannel::busLimTruePeakDb ()
+{
+	float p = -120.f;
+	for (auto& b : _buses) { const float v = (float) b.outLimiter ().truePeakDb (); if (v > p) p = v; }
+	return p;
+}
+
+float
+OxfordChannel::busLimReconDb ()
+{
+	float r = 0.f;
+	for (auto& b : _buses) { const float g = (float) b.outLimiter ().reconOverDb (); if (g > r) r = g; }
+	return r;
 }
 
 float
@@ -366,6 +401,12 @@ OxfordChannel::state () const
 
 	node.set_property (X_("buslim-on"),   _busLimOn.load ());
 	node.set_property (X_("buslim-ceil"), _busLimCeil.load ());
+	node.set_property (X_("buslim-att"),  _busLimAtt.load ());
+	node.set_property (X_("buslim-rel"),  _busLimRel.load ());
+	node.set_property (X_("buslim-knee"), _busLimKnee.load ());
+	node.set_property (X_("buslim-enh"),  _busLimEnh.load ());
+	node.set_property (X_("buslim-safe"), _busLimSafe.load ());
+	node.set_property (X_("buslim-ac"),   _busLimAC.load ());
 	node.set_property (X_("fx-bus"),      _fxBus.load ());
 	node.set_property (X_("mt-in"),       _mtIn.load ());
 	node.set_property (X_("mt-out"),      _mtOut.load ());
@@ -445,6 +486,12 @@ OxfordChannel::set_state (const XMLNode& node, int version)
 
 	if (node.get_property (X_("buslim-on"),   b)) { _busLimOn.store (b); }
 	if (node.get_property (X_("buslim-ceil"), f)) { _busLimCeil.store (f); }
+	if (node.get_property (X_("buslim-att"),  f)) { _busLimAtt.store (f); }
+	if (node.get_property (X_("buslim-rel"),  f)) { _busLimRel.store (f); }
+	if (node.get_property (X_("buslim-knee"), f)) { _busLimKnee.store (f); }
+	if (node.get_property (X_("buslim-enh"),  f)) { _busLimEnh.store (f); }
+	if (node.get_property (X_("buslim-safe"), b)) { _busLimSafe.store (b); }
+	if (node.get_property (X_("buslim-ac"),   b)) { _busLimAC.store (b); }
 	if (node.get_property (X_("fx-bus"),      b)) { _fxBus.store (b); }
 	if (node.get_property (X_("mt-in"),       f)) { _mtIn.store (f); }
 	if (node.get_property (X_("mt-out"),      f)) { _mtOut.store (f); }

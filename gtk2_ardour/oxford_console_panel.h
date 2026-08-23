@@ -22,6 +22,7 @@
 #include <ytkmm/label.h>
 
 #include "widgets/ardour_button.h"
+#include "widgets/ardour_dropdown.h"
 #include "trident_knob.h"
 #include "trident_meter.h"
 
@@ -88,13 +89,16 @@ private:
 
 	Gtk::Notebook _nb;
 	Gtk::DrawingArea _eq_curve;
+	Gtk::DrawingArea _eq_curveB;     // meme courbe, page EQ des BUS
 	Gtk::DrawingArea _dyn_curve;
+	Gtk::DrawingArea _dyn_curveB;    // meme graphe, page dynamique des BUS
+	Gtk::DrawingArea _dyn_metersB;   // VU de GR, page dynamique des BUS
 	Gtk::Notebook _dyn_nb;
 	Gtk::ComboBoxText _dyn_sel;
 	ArdourWidgets::ArdourButton _btn_eq, _btn_dyn, _btn_master;
-	ArdourWidgets::ArdourButton _curve_btn;     // cycle 4 types de courbe
+	ArdourWidgets::ArdourDropdown _curve_btn;   // menu déroulant : 4 types de courbe + GML
 	ArdourWidgets::ArdourButton _timing_btn;    // cycle 3 lois de timing
-	ArdourWidgets::ArdourButton _hp_slope_btn, _lp_slope_btn;  // off/6/12/.../36 dB-oct
+	ArdourWidgets::ArdourDropdown _hp_slope_btn, _lp_slope_btn;  // menus : off/6/12/.../36 dB-oct
 	TridentMeter* _gr_meter = 0;
 	TridentMeter* _gate_meter = 0;
 	TridentMeter* _exp_meter = 0;
@@ -115,8 +119,16 @@ private:
 	                 std::function<void(ARDOUR::OxfordChannel&, bool)> set,
 	                 std::function<bool(ARDOUR::OxfordChannel&)> get,
 	                 const char* capcol = "#1a2433");
-	Gtk::Widget* wrap_scroll (Gtk::Widget* w);
+	Gtk::Widget* wrap_scroll (Gtk::Widget* w, bool hscroll = false);
 	Gtk::Widget* subpanel (Gtk::Widget* w);   // tuile bleu clair (bi-ton) sur châssis crème
+	bool on_panel_expose (GdkEventExpose*);
+	bool on_outlim_expose (GdkEventExpose*);
+	bool on_dyn_exposeB (GdkEventExpose*);
+	bool on_dyn_metersB (GdkEventExpose*);
+	bool dyn_curve_draw (Gtk::DrawingArea&);
+	bool dyn_meters_draw (Gtk::DrawingArea&);
+	/* courbe EQ ACTIVE (piste ou bus) : une seule page est visible a la fois */
+	Gtk::DrawingArea& eqc () { return _isBus ? _eq_curveB : _eq_curve; }
 	bool on_eq_expose (GdkEventExpose*);
 
 	/* pastilles = HANDLES draggables sur la courbe EQ (façon plugin) :
@@ -133,8 +145,8 @@ private:
 	bool on_eq_motion  (GdkEventMotion*);
 	bool on_eq_scroll  (GdkEventScroll*);
 	bool on_dyn_expose (GdkEventExpose*);
-	Gtk::Widget* build_eq ();
-	Gtk::Widget* build_dyn ();
+	Gtk::Widget* build_eq (bool bus);
+	Gtk::Widget* build_dyn (bool bus);
 	Gtk::Widget* build_master ();   // MONITOR + PCM-1630 + limiteur post-PCM (vue master)
 	void show_view (int page);
 
@@ -144,6 +156,10 @@ private:
 	ArdourWidgets::ArdourButton _mon_create_btn;   // "Créer le bus Monitor"
 	Gtk::Widget* _mon_widget = 0;     // tearoff hébergé (non possédé)
 	Gtk::Label  _pcmlim_gr;           // réduction du limiteur post-PCM (texte)
+	Gtk::Widget* _panwid_box = 0;     // bloc Pan/Width (masque sur le master)
+	Gtk::DrawingArea _outlim_bars;    // bargraphs GR + Recon du limiteur de sortie
+	float _outlimGr { 0.f }, _outlimTp { -120.f }, _outlimCeil { -0.3f };
+
 	bool _masterSelected = false;     // la tranche master est sélectionnée
 	int  _lastTrackPage  = 0;         // page à restaurer en revenant sur une piste
 

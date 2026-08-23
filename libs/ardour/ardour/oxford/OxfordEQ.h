@@ -384,38 +384,59 @@ private:
         bq.a2 = (1.0 + W2 - A)     / a0;
     }
 
-    // Shelf RBJ + "overshoot" : on injecte une résonance de coude en abaissant le S
-    // effectif (pente raidie -> bosse/creux au coude, le geste 'Q' de l'OXF-R3).
+    // Loi de l'overshoot MESURÉE sur le plugin Sonnox (banc VST3, 2026-08-22) :
+    // l'overshoot n'agit QUE sur le Q du zéro, via Qz = Qp · 10^(|g|·k/40).
+    // La table k(overshoot) n'est pas linéaire (montée rapide, palier vers
+    // 15-25 %, puis remontée) — 17 points au pas de 2,5 %.
+    static double kOvershoot(double overshoot)
+    {
+        static const double kt[17] = { 0.0000, 0.1050, 0.2100, 0.2975, 0.3700,
+                                       0.4250, 0.4650, 0.4900, 0.4975, 0.5050,
+                                       0.5300, 0.5700, 0.6250, 0.6975, 0.7850,
+                                       0.8900, 1.0000 };
+        const double x = clamp(overshoot * 80.0, 0.0, 40.0) / 2.5;   // 0..16
+        const int    i = (int)x;
+        if (i >= 16) return kt[16];
+        return kt[i] + (x - (double)i) * (kt[i + 1] - kt[i]);
+    }
+
+    // Shelf « Oxford » — structure MESURÉE sur le plugin Sonnox : un biquad
+    // résonant unique, prototype analogique bilinéarisé
+    //     H(s) = (s² + (wz/Qz)s + wz²) / (s² + (wp/Qp)s + wp²)
+    // avec un pôle Butterworth FIXE au coude (Qp = 1/√2, indépendant du gain et
+    // de l'overshoot), un zéro écarté par le gain (wz = wp/√G en HF, wp·√G en
+    // LF) et l'overshoot qui ne touche QUE le Q du zéro.
+    // Le CUT est l'INVERSE EXACT du boost (réponse réciproque, comme le mode
+    // GML) : c'est la signature mesurée du Sonnox, pas la même formule à gain
+    // négatif. Le potard Q n'agit pas en mode shelf (vérifié sur le plugin).
     void makeShelf(Biquad& bq, double fc, double gainDb, bool high, double overshoot)
     {
-        const double A  = std::pow(10.0, gainDb / 40.0);
-        // Décale le coude pour que la fréquence AFFICHÉE tombe dans le PLATEAU
-        // (sinon le coude RBJ ne donne que ~la moitié du gain à cette fréquence) :
-        //   HF -> coude plus bas (plateau vers l'aigu) ; LF -> coude plus haut.
-        double fcEff = high ? fc / 2.2 : fc * 2.2;
-        fcEff = clamp(fcEff, 10.0, 0.45 * sampleRate);
-        const double w0 = 2.0 * PI * fcEff / sampleRate;
-        const double cw = std::cos(w0), sw = std::sin(w0);
-        const double S  = 0.9 + 1.6 * overshoot;            // >1 -> overshoot/undershoot
-        const double alpha = sw / 2.0 * std::sqrt((A + 1.0 / A) * (1.0 / S - 1.0) + 2.0);
-        const double tsa = 2.0 * std::sqrt(A) * alpha;
-        if (high)
+        const double a  = std::fabs(gainDb);
+        const double G  = std::pow(10.0, a / 20.0);
+        const double Qp = 0.70710678118654752;
+        const double Qz = Qp * std::pow(10.0, a * kOvershoot(overshoot) / 40.0);
+        // décalage de coude constant mesuré : fp = fc·0,989 (HF), fc/0,989 (LF)
+        double fp = high ? fc * kShelfFpRatio : fc / kShelfFpRatio;
+        fp = clamp(fp, 10.0, 0.49 * sampleRate);
+        const double K  = 2.0 * sampleRate;
+        const double wp = K * std::tan(PI * fp / sampleRate);
+        const double wz = high ? wp / std::sqrt(G) : wp * std::sqrt(G);
+        const double n0 = K * K + (wz / Qz) * K + wz * wz;
+        const double n1 = -2.0 * K * K + 2.0 * wz * wz;
+        const double n2 = K * K - (wz / Qz) * K + wz * wz;
+        const double d0 = K * K + (wp / Qp) * K + wp * wp;
+        const double d1 = -2.0 * K * K + 2.0 * wp * wp;
+        const double d2 = K * K - (wp / Qp) * K + wp * wp;
+        const double g0 = high ? G : 1.0;   // normalisation du plateau
+        if (gainDb >= 0.0)
         {
-            const double a0 = (A + 1.0) - (A - 1.0) * cw + tsa;
-            bq.b0 = (A * ((A + 1.0) + (A - 1.0) * cw + tsa)) / a0;
-            bq.b1 = (-2.0 * A * ((A - 1.0) + (A + 1.0) * cw)) / a0;
-            bq.b2 = (A * ((A + 1.0) + (A - 1.0) * cw - tsa)) / a0;
-            bq.a1 = (2.0 * ((A - 1.0) - (A + 1.0) * cw)) / a0;
-            bq.a2 = ((A + 1.0) - (A - 1.0) * cw - tsa) / a0;
+            bq.b0 = g0 * n0 / d0; bq.b1 = g0 * n1 / d0; bq.b2 = g0 * n2 / d0;
+            bq.a1 = d1 / d0;      bq.a2 = d2 / d0;
         }
-        else
+        else                                 // cut = inverse exact du boost
         {
-            const double a0 = (A + 1.0) + (A - 1.0) * cw + tsa;
-            bq.b0 = (A * ((A + 1.0) - (A - 1.0) * cw + tsa)) / a0;
-            bq.b1 = (2.0 * A * ((A - 1.0) - (A + 1.0) * cw)) / a0;
-            bq.b2 = (A * ((A + 1.0) - (A - 1.0) * cw - tsa)) / a0;
-            bq.a1 = (-2.0 * ((A - 1.0) + (A + 1.0) * cw)) / a0;
-            bq.a2 = ((A + 1.0) + (A - 1.0) * cw - tsa) / a0;
+            bq.b0 = (d0 / g0) / n0; bq.b1 = (d1 / g0) / n0; bq.b2 = (d2 / g0) / n0;
+            bq.a1 = n1 / n0;        bq.a2 = n2 / n0;
         }
     }
 
@@ -424,11 +445,18 @@ private:
         const double w0 = 2.0 * PI * clamp(fc, 10.0, 0.49 * sampleRate) / sampleRate;
         const double cw = std::cos(w0), sw = std::sin(w0);
         const int nbiq = order / 2;
-        // Q de Butterworth staggered pour une cascade d'ordre 'order'
+        // Q de Butterworth staggered pour une cascade d'ordre 'order'.
+        // ⚠ les angles des pôles dépendent de la PARITÉ de l'ordre : pour un
+        // ordre impair, le pôle réel est porté par le one-pole ci-dessous et les
+        // sections quadratiques sont en kπ/n (et non (2k-1)π/2n). Avec la
+        // formule paire appliquée aux ordres impairs, le coude tombait à
+        // -7,8 dB (18 dB/oct) et -10 dB (30 dB/oct) au lieu de -3,01 dB.
         for (int i = 0; i < nbiq; ++i)
         {
-            const double k = (2.0 * (i + 1) - 1.0);
-            const double Q = 1.0 / (2.0 * std::cos(PI * k / (2.0 * order)));
+            const double theta = (order & 1)
+                               ? (PI * (double)(i + 1) / (double)order)
+                               : (PI * (2.0 * (i + 1) - 1.0) / (2.0 * (double)order));
+            const double Q = 1.0 / (2.0 * std::cos(theta));
             const double alpha = sw / (2.0 * Q);
             const double a0 = 1.0 + alpha;
             Biquad& bq = f.sec[(size_t)i];
@@ -517,6 +545,8 @@ private:
 
     static constexpr double PI = 3.14159265358979323846;
     static constexpr int    kCoeffUpdate = 32;   // recalcule les coeffs tous les 32 éch.
+    // décalage de coude des shelves, mesuré sur le plugin Sonnox
+    static constexpr double kShelfFpRatio = 0.9890;
 
     double sampleRate { 48000.0 };
     bool   eqOn { true }, hpOn { false }, lpOn { false };

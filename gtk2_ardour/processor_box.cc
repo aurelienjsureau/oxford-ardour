@@ -1049,7 +1049,11 @@ ProcessorEntry::Control::build_ui ()
 	} else {
 
 		_slider.set_name ("ProcessorControlSlider");
-		_slider.set_text (_name);
+		/* OXFORD : sur un send, le nom figure déjà dans l'en-tête de l'entrée ;
+		 * le répéter au centre du fader surcharge le bouton pour rien. */
+		if (!std::dynamic_pointer_cast<ARDOUR::Send> (_entry.processor ())) {
+			_slider.set_text (_name);
+		}
 		_slider.set_controllable (c);
 
 		box.add (_slider);

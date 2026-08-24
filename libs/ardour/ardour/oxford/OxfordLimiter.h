@@ -1,36 +1,8 @@
 #pragma once
 //
-// OxfordLimiter — limiteur de SORTIE du master, modèle comportemental calé sur
-// des MESURES du plugin Sonnox Oxford Limiter (banc VST3, 2026-08-23).
-// Implémentation DSP ORIGINALE, portable (std/math seulement).
-//
-// Ce limiteur est celui de FIN DE CHAÎNE. Il ne faut pas le confondre avec la
-// section Limiter d'OxfordDynamics, qui modélise l'Oxford *Dynamics* et vit
-// dans la tranche.
-//
-// Ce qui est MESURÉ et reproduit fidèlement :
-//   - le seuil EST le plafond de sortie (référencé sortie, brickwall au-dessus,
-//     unité en dessous) ; sortie max mesurée = seuil à 5 millièmes de dB près ;
-//   - genou quadratique de largeur TOTALE 2 x knee (vérifié : seuil -6 knee 10
-//     -> 2,50 dB de réduction au seuil, formule 10²/40 = 2,50) ;
-//   - release = UN pôle, constante de temps = réglage + 8 ms (58,1 ms mesurés
-//     pour 50, 108,1 pour 100), INDÉPENDANTE de la profondeur de réduction ;
-//   - attaque quasi instantanée sans dépassement -> look-ahead ;
-//   - gain d'entrée et trim de sortie strictement linéaires.
-//
-// Ce qui est APPROXIMÉ, et pourquoi :
-//   - l'Enhance du Sonnox est un Oxford Inflator intégré. Sa courbe mesurée va
-//     d'un gain local de 1,71 à bas niveau à 1,008 à pleine échelle, et le
-//     réglage 0..100 % est un simple FONDU vers cette courbe (mesuré : 50 % est
-//     exactement le milieu). On reproduit ça par f(u) = 2u - u², calée sur le
-//     gain d'un sinus stable (+2,23 dB à -3 dBFS, mesuré).
-//     ⚠ Le vrai Enhance a en plus une constante de temps de déclenchement (le
-//     manuel Sonnox le dit, et nos mesures le confirment : entre 100 et 125 %
-//     seule cette constante change, à courbe et fondu identiques). Notre
-//     version est SANS MÉMOIRE : c'est le principal écart assumé.
-//   - Safe Mode : mesuré comme un fondu bloqué à 100 % avec une courbe pilotée
-//     par l'Enhance, jamais identique à celle du mode normal, et rigoureusement
-//     confondu avec lui à partir de 100 %. Reproduit par une courbe plus douce.
+// OxfordLimiter — limiteur de sortie du master (fin de chaîne). À ne pas
+// confondre avec la section Limiter d'OxfordDynamics, qui vit dans la tranche.
+// Seuil = plafond de sortie. Enhance = inflation façon Inflator.
 //
 #include <cmath>
 #include <array>
@@ -75,11 +47,9 @@ public:
     bool   enabled ()          const { return on_; }
     double gainReductionDb ()  const { return grMeter; }          // >= 0
     double outputPeakDb ()     const { return 20.0 * std::log10 (outPeak > 1e-9 ? outPeak : 1e-9); }
-    // dépassement des crêtes INTER-ÉCHANTILLONS au-dessus du plafond (Recon) :
-    // le plugin Sonnox affiche exactement ça, et ne le corrige pas de lui-même.
+    // Recon : dépassement des crêtes inter-échantillons au-dessus du plafond
     double reconOverDb ()      const { return tpOver; }
-    // niveau de sortie en CRÊTE RÉELLE (inter-échantillon), en dBFS : plus utile
-    // au quotidien qu'un simple dépassement, qui reste à zéro tant que tout va bien.
+    // niveau de sortie en crête réelle (inter-échantillon), dBFS
     double truePeakDb ()       const { return 20.0 * std::log10 (tpPeak > 1e-9 ? tpPeak : 1e-9); }
     void   resetMeters ()            { grMeter = 0.0; outPeak = 0.0; tpOver = 0.0; }
 
@@ -121,11 +91,7 @@ public:
         // ---- Enhance : inflation APRÈS la limitation (ordre du plugin) ----
         if (enh > 0.0 || safe) { y = inflate (y); }
 
-        // ---- Auto-Comp : corrige UNIQUEMENT les crêtes inter-échantillons ----
-        // Le manuel Sonnox est explicite : « It is only inter-sample-peaks that
-        // are corrected, not sample-peaks » — un signal déjà au-dessus de
-        // l'unité le reste. C'est donc un correcteur de niveau à constante de
-        // temps rapide, pas un second brickwall.
+        // Auto-Comp : crêtes inter-échantillons uniquement, pas les crêtes échantillon
         if (autoComp) { y = auto_comp (y); }
 
         y *= outTrim;
@@ -153,13 +119,8 @@ private:
         relC = std::exp (-1.0 / (t < 1.0 ? 1.0 : t));
     }
 
-    // Courbes d'inflation MESURÉES sur l'Oxford Inflator (effect 100 %, band
-    // split off), rééchantillonnées sur une grille linéaire de |u| :
-    //   kInflLo = curve -50 (douce)   kInflHi = curve +50 (marquée)
-    // Le paramètre « curve » du plugin est une INTERPOLATION LINÉAIRE entre les
-    // deux (vérifié : curve 0 est la moyenne exacte des deux, à 0,001 près), et
-    // le réglage « effect » est un fondu vers l'identité.
-    // NB : kInflHi vaut exactement 2u - u², vérifié à la 4e décimale.
+    // Courbes d'inflation : kInflLo = curve -50, kInflHi = curve +50 (2u - u²).
+    // « curve » interpole linéairement entre les deux.
     static double inflCurve (double u, double t)
     {
         static const double kInflLo[33] = {
@@ -186,18 +147,9 @@ private:
         return lo + (hi - lo) * clamp (t, 0.0, 1.0);
     }
 
-    // Mapping MESURÉ sur le limiteur :
-    //   safe OFF : courbe FIXE = curve +50, l'Enhance est le fondu 0..100 %
-    //              (calé : gain +2,22 dB sur sinus -3 dBFS, mesuré +2,226) ;
-    //   safe ON  : fondu bloqué à 100 %, l'Enhance pilote la courbe de -50 à +50.
-    // Les deux se rejoignent donc exactement à 100 %, ce que la mesure confirme.
-    // ⚠ Écart assumé : le vrai Enhance a une constante de temps de déclenchement
-    // (c'est elle seule qui change entre 100 et 125 %) ; le nôtre est sans mémoire.
-    // ⚠ L'inflation est normalisée sur le PLAFOND, pas sur 0 dBFS : elle remonte
-    // ce qui est sous le plafond VERS le plafond, sans jamais le dépasser.
-    // Mesuré sur le plugin : à enhance 100 + safe, sa sortie reste sur le
-    // plafond au millième près. Normaliser sur 0 dBFS faisait sortir 3,5 dB
-    // au-dessus du plafond quand celui-ci est bas.
+    // safe OFF : courbe fixe (+50), Enhance = fondu 0..100 %.
+    // safe ON  : fondu à 100 %, Enhance pilote la courbe. Identiques à 100 %.
+    // Inflation normalisée sur le PLAFOND (pas 0 dBFS) : sinon elle sort au-dessus
     double inflate (double y) noexcept
     {
         const double ceilLin = std::pow (10.0, ceilDb / 20.0);
@@ -213,17 +165,10 @@ private:
             shaped = inflCurve (uc, 1.0);
             mix = clamp (enh / 100.0, 0.0, 1.0);
         }
-        // « an Oxford Inflator modified to work on transients only » (manuel) :
-        // l'inflation ne s'applique qu'à ce qui DÉPASSE l'enveloppe courte, sinon
-        // elle remonte tout le programme (mesuré : +2,3 dB de trop sur un mix).
+        // inflation limitée aux transitoires : sinon elle remonte tout le programme
         double tf = transientFactor (uc);
-        // ENTRE 100 ET 125 % la courbe et le fondu sont au maximum : c'est la
-        // « constante de temps de déclenchement » qui s'élargit (manuel Sonnox),
-        // autrement dit l'inflation cesse peu à peu de se limiter aux crêtes.
-        // MESURÉ : le Sonnox ajoute 10 dB d'énergie de plus entre 100 et 125,
-        // là où notre version ne bougeait pas du tout.
-        /* ouverture PARTIELLE : ouvrir en grand donnait 20 dB de plus au lieu
-         * des 10 dB mesurés sur le plugin. Facteur calé sur cette mesure. */
+        // 100-125 % : la courbe est au max, c'est le déclenchement qui s'élargit
+        /* ouverture partielle : en grand on obtenait 20 dB au lieu de 10 */
         const double open = clamp ((enh - 100.0) / 25.0, 0.0, 1.0) * 0.25;
         tf += (1.0 - tf) * open;
         mix *= tf;
@@ -231,10 +176,7 @@ private:
         return (y < 0.0 ? -v : v) * (u > 1.0 ? u : 1.0);
     }
 
-    // Auto-Comp : baisse le gain de sortie quand la crête RECONSTRUITE (entre
-    // deux échantillons) dépasse le plafond, avec une constante de temps rapide.
-    // Il ne touche PAS aux crêtes échantillon — celles-ci sont déjà l'affaire du
-    // limiteur. Attaque immédiate, retour en ~50 ms.
+    // Auto-Comp : baisse le gain quand la crête reconstruite dépasse le plafond.
     double auto_comp (double y) noexcept
     {
         const double m   = interp_peak (y);
@@ -263,12 +205,7 @@ private:
         return acZ[(size_t) (kTP / 2)] * acLin;
     }
 
-    // Crête RECONSTRUITE entre deux échantillons.
-    // ⚠ Un estimateur au seul point MILIEU (2x) rate l'essentiel : le maximum
-    // réel peut tomber n'importe où dans l'intervalle. Mesuré, l'auto-comp qui
-    // s'appuyait dessus ne gagnait que 0,05 dB sur le vrai pic — inutile.
-    // On interpole donc en QUATRE points (Catmull-Rom, t = 1/4, 1/2, 3/4) et on
-    // retient le maximum.
+    // Crête reconstruite entre deux échantillons (suréchantillonnage x4).
     double interp_peak (double y) noexcept
     {
         for (int i = kTP - 1; i > 0; --i) { acZ[(size_t) i] = acZ[(size_t) i - 1]; }
@@ -284,12 +221,9 @@ private:
         return best;
     }
 
-    /* Noyau de reconstruction : sinus cardinal fenêtré (Hann), 8 prises, 3 phases
-     * intermédiaires -> suréchantillonnage x4 honnête.
-     * ⚠ Une interpolation cubique (Catmull-Rom) sous-estimait la reconstruction
-     * réelle d'environ 0,6 dB, et il fallait compenser par une marge qui coûtait
-     * autant de niveau en sortie — sans même tenir le plafond. Densifier les
-     * points n'y changeait rien : c'était le NOYAU qui était en cause. */
+    /* Noyau de reconstruction : sinus cardinal fenêtré (Hann), 8 prises,
+     * 3 phases -> suréchantillonnage x4. Une interpolation cubique sous-estime
+     * de ~0,6 dB et oblige à une marge qui coûte autant de niveau. */
     void build_tp_kernel ()
     {
         for (int p = 0; p < 3; ++p) {
@@ -310,10 +244,7 @@ private:
         }
     }
 
-    // Facteur de transitoire : rapport entre l'échantillon et la moyenne courte.
-    // Une crête isolée le pousse à 1, le corps du programme reste bas. Sur un
-    // sinus stable la crête atteint quand même 1 (le rapport crête/moyenne d'un
-    // sinus vaut 1,57), ce qui préserve le calage sur la mesure au sinus.
+    // Facteur de transitoire : rapport échantillon / moyenne courte.
     double transientFactor (double uc) noexcept
     {
         infEnv += (uc - infEnv) * infA;

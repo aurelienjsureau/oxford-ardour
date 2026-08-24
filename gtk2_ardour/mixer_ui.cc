@@ -39,6 +39,8 @@
 #include <ytkmm/offscreenwindow.h>
 #include <ytkmm/stock.h>
 
+#include "oxford_acrylic.h"
+
 #include "pbd/convert.h"
 #include "pbd/unwind.h"
 
@@ -407,6 +409,7 @@ Mixer_UI::Mixer_UI ()
 	global_hpacker.pack_start (out_packer, false, false);
 	_oxford_console = Gtk::manage (new OxfordConsolePanel ());
 	global_hpacker.pack_start (*_oxford_console, false, false);
+	OxfordAcrylic::keep_opaque (*_oxford_console);
 	_oxford_console->show ();
 
 	inner_pane.set_divider (0, .8);
@@ -414,6 +417,7 @@ Mixer_UI::Mixer_UI ()
 	inner_pane.set_drag_cursor (*PublicEditor::instance().cursors()->expand_left_right);
 
 	content_app_bar.add (_application_bar);
+	OxfordAcrylic::keep_opaque (content_app_bar);
 	content_main.add (global_hpacker);
 
 	if (!Profile->get_mixbus ()) {

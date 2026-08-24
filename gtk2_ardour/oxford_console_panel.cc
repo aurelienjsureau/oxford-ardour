@@ -319,6 +319,15 @@ OxfordConsolePanel::OxfordConsolePanel ()
 		cen->set_no_show_all (true);
 		_panwid_box = cen;
 		_box.pack_start (*cen, Gtk::PACK_SHRINK);
+		/* ATTENTION : show_all() SORT immédiatement sur un widget no_show_all,
+		 * sans descendre dans ses enfants -> il faut montrer le contenu à la
+		 * main, sinon les potards restent invisibles à vie (même après un
+		 * cen->show(), qui ne montre que l'alignement).
+		 * Et l'état de départ est "piste" : refresh() ne rebascule que sur
+		 * CHANGEMENT de sélection, il ne montrerait donc jamais rien au
+		 * démarrage tant que le master n'a pas été sélectionné puis quitté. */
+		pw->show_all ();
+		cen->show ();
 	}
 
 	Gtk::HBox* navb = Gtk::manage (new Gtk::HBox ());
@@ -600,26 +609,30 @@ OxfordConsolePanel::build_eq (bool bus)
 	curve.signal_scroll_event ().connect (sigc::mem_fun (*this, &OxfordConsolePanel::on_eq_scroll));
 	b->pack_start (curve, Gtk::PACK_SHRINK);
 
-	/* type de courbe + bascules shelf */
+	/* type de courbe + bascules shelf. UN dropdown par page. */
+	ArdourWidgets::ArdourDropdown& curve_btn = bus ? _curve_btnB : _curve_btn;
 	Gtk::HBox* opt = Gtk::manage (new Gtk::HBox ()); opt->set_spacing (2);
-	_curve_btn.set_text (curve_name (2));
-	_curve_btn.set_fixed_colors (0xc8e030ff, 0xc8c4b8ff);
-	_curve_btn.set_layout_font (Pango::FontDescription ("ArdourSans 10"));
+	curve_btn.set_text (curve_name (2));
+	curve_btn.set_fixed_colors (0xc8e030ff, 0xc8c4b8ff);
+	curve_btn.set_layout_font (Pango::FontDescription ("ArdourSans 10"));
 	/* menu déroulant : on voit les 5 types d'un coup au lieu de les parcourir */
 	for (int t = 0; t < 5; ++t) {
-		_curve_btn.add_menu_elem (Gtk::Menu_Helpers::MenuElem (curve_name (t), [this, t] () {
+		ArdourWidgets::ArdourDropdown* cb = &curve_btn;
+		curve_btn.add_menu_elem (Gtk::Menu_Helpers::MenuElem (curve_name (t), [this, t, cb] () {
 			if (!_chan) { return; }
 			apply_linked ([t] (OxfordChannel& c) { c.setCurveType (t); });   // Alt -> sélection
-			_curve_btn.set_text (curve_name (t));
+			cb->set_text (curve_name (t));
 		}));
 	}
 	Gtk::Label* cl = Gtk::manage (new Gtk::Label (_("Curve"))); cl->set_alignment (0,0.5);
 	opt->pack_start (*cl, false, false);
-	ArdourWidgets::set_tooltip (_curve_btn, _("Curve type: how bell width reacts to gain. 1 = constant Q, 2 = symmetric when boosting and pinched when cutting, 3 = moderate (factory setting), 4 = strongly proportional."));
-	opt->pack_start (_curve_btn, true, true);
+	ArdourWidgets::set_tooltip (curve_btn, _("Curve type: how bell width reacts to gain. 1 = constant Q, 2 = symmetric when boosting and pinched when cutting, 3 = moderate (factory setting), 4 = strongly proportional."));
+	opt->pack_start (curve_btn, true, true);
 	b->pack_start (*opt, Gtk::PACK_SHRINK);
 
-	/* HPF */
+	/* HPF — pistes seulement (les Returns n'ont pas de filtres à pente). */
+	Gtk::Frame* hpf = 0;
+	if (!bus) {
 	_tipctx = "HP";
 	Gtk::HBox* hp = Gtk::manage (new Gtk::HBox ()); hp->set_spacing (2);
 	Gtk::Label* hpl = Gtk::manage (new Gtk::Label (_("HP"))); hpl->set_size_request (40,-1); hpl->set_alignment (0,0.5);
@@ -642,8 +655,9 @@ OxfordConsolePanel::build_eq (bool bus)
 	hp->pack_start (*mk (20,400,80,_("Freq"),f_hz,false,-1,
 	    [](OxfordChannel& c,double v){ c.setHPF (c.hpfOn (), (float)v, c.hpfSlope ()); },
 	    [](OxfordChannel& c){ return (double) c.hpfHz (); }, kFilterCap[0],kFilterCap[1],kFilterCap[2]), true, false);
-	Gtk::Frame* hpf = Gtk::manage (new Gtk::Frame (_("HP FILTER")));
+	hpf = Gtk::manage (new Gtk::Frame (_("HP FILTER")));
 	hpf->add (*subpanel (hp));
+	}
 
 	/* 5 bandes empilées. Chaque bloc : label crème à gauche | (FREQ+Q) au-dessus,
 	 * GAIN dessous | (LF/HF : shelf toggle). Resserré, séparateur fin entre blocs. */
@@ -701,7 +715,8 @@ OxfordConsolePanel::build_eq (bool bus)
 	bandframe->add (*subpanel (bandbox));
 	b->pack_start (*bandframe, Gtk::PACK_SHRINK);
 
-	/* LPF */
+	/* LPF — pistes seulement. */
+	if (!bus) {
 	_tipctx = "LP";
 	Gtk::HBox* lp = Gtk::manage (new Gtk::HBox ()); lp->set_spacing (2);
 	Gtk::Label* lpl = Gtk::manage (new Gtk::Label (_("LP"))); lpl->set_size_request (40,-1); lpl->set_alignment (0,0.5);
@@ -730,7 +745,8 @@ OxfordConsolePanel::build_eq (bool bus)
 	Gtk::HBox* filt = Gtk::manage (new Gtk::HBox ()); filt->set_spacing (4);
 	filt->pack_start (*hpf, true, true);
 	filt->pack_start (*lpf, true, true);
-	if (!bus) { b->pack_start (*filt, Gtk::PACK_SHRINK); }   // pas de filtres à pente sur les Returns
+	b->pack_start (*filt, Gtk::PACK_SHRINK);
+	}
 
 	return b;
 }
@@ -1104,6 +1120,7 @@ OxfordConsolePanel::refresh ()
 	}
 	if (_chan) {
 		_curve_btn.set_text (curve_name (_chan->curveType ()));
+		_curve_btnB.set_text (curve_name (_chan->curveType ()));
 		_timing_btn.set_text (timing_name (_chan->timingLaw ()));
 		char sb[16];
 		if (_chan->hpfOn ()) { std::snprintf (sb,sizeof sb,"%.0f",_chan->hpfSlope ()); _hp_slope_btn.set_text (sb); _hp_slope_btn.set_active_state (Gtkmm2ext::ExplicitActive); } else { _hp_slope_btn.set_text (_("off")); _hp_slope_btn.set_active_state (Gtkmm2ext::Off); }

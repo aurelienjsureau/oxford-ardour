@@ -2679,6 +2679,20 @@ RCOptionEditor::RCOptionEditor ()
 				sigc::mem_fun (UIConfiguration::instance(), &UIConfiguration::set_meter_style_led)
 				));
 
+#ifdef PLATFORM_WINDOWS
+	{
+		BoolOption* acr = new BoolOption (
+				"oxford-acrylic",
+				_("Translucent background (Windows 11)"),
+				sigc::mem_fun (UIConfiguration::instance(), &UIConfiguration::get_oxford_acrylic),
+				sigc::mem_fun (UIConfiguration::instance(), &UIConfiguration::set_oxford_acrylic)
+				);
+		Gtkmm2ext::UI::instance()->set_tip (acr->tip_widget (),
+				_("Blur the desktop through the empty areas of the window. Menus, transport bar and the Oxford console panel stay opaque."));
+		add_option (_("Appearance"), acr);
+	}
+#endif
+
 	if (!Profile->get_mixbus()) {
 		vector<string> icon_sets = ::get_icon_sets ();
 		if (icon_sets.size() > 1) {

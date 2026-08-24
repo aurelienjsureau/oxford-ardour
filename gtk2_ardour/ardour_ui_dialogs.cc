@@ -90,7 +90,6 @@
 #include "timers.h"
 #include "transport_masters_dialog.h"
 #include "trigger_page.h"
-#include "oxford_timer.h"
 #include "virtual_keyboard_window.h"
 
 #include "pbd/i18n.h"
@@ -129,12 +128,6 @@ ARDOUR_UI::set_session (Session *s)
 	update_path_label ();
 	update_sample_rate ();
 	session_latency_updated (true);
-
-	/* OXFORD : compteur de la barre d'état — le cumul facturé est rangé dans
-	 * l'instant.xml de la session, donc il suit le changement de session. */
-	if (_oxford_timer) {
-		_oxford_timer->set_session (s);
-	}
 
 	if (!_session) {
 		/* Session option editor cannot exist across change-of-session */

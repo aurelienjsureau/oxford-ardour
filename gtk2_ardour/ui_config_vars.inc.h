@@ -170,6 +170,8 @@ UI_CONFIG_VARIABLE (bool, use_cocoa_invalidation, "use-cocoa-invalidation", true
 /* OXFORD : vrai une fois que le compteur de la barre d'état a été inséré dans
  * la liste de visibilité d'une config préexistante (opération à faire UNE fois). */
 UI_CONFIG_VARIABLE (bool, oxford_timer_seeded, "oxford-timer-seeded", false)
+/* Oxford : fond acrylique translucide (Windows 11) */
+UI_CONFIG_VARIABLE (bool, oxford_acrylic, "oxford-acrylic", true)
 /* OXFORD : les propriétés de région s'ouvrent dans leur PROPRE fenêtre (le
  * bandeau du bas ne montre plus rien, cf. Editor::Editor). */
 UI_CONFIG_VARIABLE (Editing::RegionEditDisposition, region_edit_disposition, "region-edit-disposition", Editing::NeverBottomPane)

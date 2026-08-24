@@ -97,6 +97,7 @@ private:
 	Gtk::ComboBoxText _dyn_sel;
 	ArdourWidgets::ArdourButton _btn_eq, _btn_dyn, _btn_master;
 	ArdourWidgets::ArdourDropdown _curve_btn;   // menu déroulant : 4 types de courbe + GML
+	ArdourWidgets::ArdourDropdown _curve_btnB;  // le meme, page EQ des BUS
 	ArdourWidgets::ArdourButton _timing_btn;    // cycle 3 lois de timing
 	ArdourWidgets::ArdourDropdown _hp_slope_btn, _lp_slope_btn;  // menus : off/6/12/.../36 dB-oct
 	TridentMeter* _gr_meter = 0;

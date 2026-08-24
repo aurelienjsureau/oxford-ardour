@@ -255,12 +255,14 @@ ApplicationBar::on_parent_changed (Gtk::Widget*)
 		_table.attach (_secondary_clock_spacer, TCOL, 0, 2 , SHRINK, EXPAND|FILL, 3, 0);
 		++col;
 
-		_table.attach (_secondary_clock,                col,     col + 2, 0, 1 , FILL, SHRINK, hpadding, 0);
-		_table.attach (*(_secondary_clock.left_btn()),  col,     col + 1, 1, 2 , FILL, SHRINK, hpadding, 0);
-		_table.attach (*(_secondary_clock.right_btn()), col + 1, col + 2, 1, 2 , FILL, SHRINK, hpadding, 0);
-		(ARDOUR_UI::instance()->secondary_clock)->set_no_show_all (true);
-		(ARDOUR_UI::instance()->secondary_clock)->left_btn()->set_no_show_all (true);
-		(ARDOUR_UI::instance()->secondary_clock)->right_btn()->set_no_show_all (true);
+		/* OXFORD : le minuteur / chrono de facturation remplace la 2e horloge.
+		 * Elle faisait doublon avec l'horloge principale, et le compteur avait
+		 * besoin d'une place où l'oeil passe (la barre d'état était invisible).
+		 * Attaché en DEUX morceaux, exactement comme une horloge (afficheur en
+		 * ligne 0, boutons en ligne 1) : c'est ce qui l'aligne sur sa voisine,
+		 * les hauteurs de ligne étant partagées par la table. */
+		_table.attach (_oxford_timer.display_widget (),  col, col + 2, 0, 1 , FILL, SHRINK, hpadding, 0);
+		_table.attach (_oxford_timer.controls_widget (), col, col + 2, 1, 2 , FILL, SHRINK, hpadding, 0);
 		col += 2;
 	}
 
@@ -344,6 +346,11 @@ ApplicationBar::on_parent_changed (Gtk::Widget*)
 	button_height_size_group->add_widget (*_secondary_clock.left_btn());
 	button_height_size_group->add_widget (*_secondary_clock.right_btn());
 
+	/* OXFORD : même hauteur que les boutons d'horloge */
+	button_height_size_group->add_widget (_oxford_timer.mode_button ());
+	button_height_size_group->add_widget (_oxford_timer.run_button ());
+	button_height_size_group->add_widget (_oxford_timer.reset_button ());
+
 	Glib::RefPtr<SizeGroup> punch_button_size_group = SizeGroup::create (Gtk::SIZE_GROUP_HORIZONTAL);
 	punch_button_size_group->add_widget (_punch_in_button);
 	punch_button_size_group->add_widget (_punch_out_button);
@@ -355,6 +362,19 @@ ApplicationBar::on_parent_changed (Gtk::Widget*)
 	Glib::RefPtr<SizeGroup> clock2_size_group = SizeGroup::create (SIZE_GROUP_HORIZONTAL);
 	clock2_size_group->add_widget (*_secondary_clock.left_btn());
 	clock2_size_group->add_widget (*_secondary_clock.right_btn());
+
+	/* OXFORD : « MINUT. » et « RAZ » de même largeur, comme tempo / signature */
+	Glib::RefPtr<SizeGroup> oxtimer_size_group = SizeGroup::create (SIZE_GROUP_HORIZONTAL);
+	oxtimer_size_group->add_widget (_oxford_timer.mode_button ());
+	oxtimer_size_group->add_widget (_oxford_timer.reset_button ());
+
+	/* OXFORD : l'afficheur et l'horloge principale dans le même SizeGroup
+	 * vertical -> les deux boîtes ont la même hauteur et le même aplomb.
+	 * (Validé visuellement ; ne pas y mettre le bouton à la place du conteneur,
+	 * essai fait, ça déséquilibrait les deux boîtes.) */
+	Glib::RefPtr<SizeGroup> oxclock_size_group = SizeGroup::create (Gtk::SIZE_GROUP_VERTICAL);
+	oxclock_size_group->add_widget (_primary_clock);
+	oxclock_size_group->add_widget (_oxford_timer.display_widget ());
 
 	Glib::RefPtr<SizeGroup> monitor_button_size_group = SizeGroup::create (Gtk::SIZE_GROUP_HORIZONTAL);
 	monitor_button_size_group->add_widget (_monitor_dim_button);
@@ -767,6 +787,7 @@ ApplicationBar::set_session (Session *s)
 		_shuttle_box.set_session (s);
 		_primary_clock.set_session (s);
 		_secondary_clock.set_session (s);
+		_oxford_timer.set_session (s);
 		_mini_timeline.set_session (s);
 		_time_info_box->set_session (s);
 	}
@@ -891,15 +912,12 @@ ApplicationBar::update_clock_visibility ()
 	if (ARDOUR::Profile->get_small_screen()) {
 		return;
 	}
+	/* OXFORD : « 2e horloge » = le minuteur / chrono de facturation */
 	if (UIConfiguration::instance().get_show_secondary_clock ()) {
-		_secondary_clock.show();
-		_secondary_clock.left_btn()->show();
-		_secondary_clock.right_btn()->show();
+		_oxford_timer.show ();
 		_secondary_clock_spacer.show();
 	} else {
-		_secondary_clock.hide();
-		_secondary_clock.left_btn()->hide();
-		_secondary_clock.right_btn()->hide();
+		_oxford_timer.hide ();
 		_secondary_clock_spacer.hide();
 	}
 }

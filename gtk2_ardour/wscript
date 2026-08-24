@@ -189,6 +189,7 @@ gtk2_ardour_sources = [
         'mixer_group_tabs.cc',
         'mixer_strip.cc',
         'mixer_ui.cc',
+        'oxford_acrylic.cc',
         'oxford_console_panel.cc',
         'oxford_timer.cc',
         'meterbridge.cc',
@@ -706,7 +707,7 @@ def build(bld):
         obj.source += [ 'windows_icon.rc' ]
         # imm32 en fin de ligne (obj.lib), pas en linkflags : ld résout de gauche à
         # droite, la lib doit venir APRÈS les objets. ImmDisableIME (anti-récursion IME).
-        obj.lib = (getattr(obj, 'lib', None) or []) + [ 'imm32' ]
+        obj.lib = (getattr(obj, 'lib', None) or []) + [ 'imm32', 'dwmapi' ]
     elif bld.env['build_target'] == 'msvc':
         obj.source += [ 'bundle_env_msvc2.cc' ]
         obj.source += [ 'windows_icon.rc' ]

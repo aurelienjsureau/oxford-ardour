@@ -127,7 +127,6 @@ class KeyEditor;
 class LocationUIWindow;
 class LuaScriptManager;
 class LuaWindow;
-class OxfordTimer;
 class RCOptionEditor;
 class RouteParams_UI;
 class SessionOptionEditor;
@@ -561,9 +560,6 @@ private:
 
 	Gtk::Label   wall_clock_label;
 	gint update_wall_clock ();
-
-	/* OXFORD : compteur de la barre d'état (facturation / chrono / minuteur) */
-	OxfordTimer* _oxford_timer;
 
 	Gtk::Label  disk_space_label;
 	void update_disk_space ();

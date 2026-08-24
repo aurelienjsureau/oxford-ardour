@@ -41,6 +41,7 @@
 #include <vector>
 
 #include "ardour_ui.h"
+#include "oxford_acrylic.h"
 /*
  * ardour_ui.h include was moved to the top of the list
  * due to a conflicting definition of 'Style' between
@@ -671,6 +672,7 @@ Editor::Editor ()
 	/* pack all the main pieces into appropriate containers from _tabbable
 	 */
 	content_app_bar.add (_application_bar);
+	OxfordAcrylic::keep_opaque (content_app_bar);
 	content_att_right.add (_editor_list_vbox);
 	content_att_bottom.add (_bottom_hbox);
 	content_main_top.add (global_vpacker);

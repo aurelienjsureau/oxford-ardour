@@ -26,6 +26,8 @@
 #include <ytkmm/menu.h>
 #include <ytkmm/menuitem.h>
 
+#include "oxford_acrylic.h"
+
 #include "pbd/string_convert.h"
 
 #include "ardour/audioengine.h"
@@ -196,6 +198,7 @@ RecorderUI::RecorderUI ()
 
 	/* Top-level VBox */
 	content_app_bar.add (_application_bar);
+	OxfordAcrylic::keep_opaque (content_app_bar);
 	//content_att_right.add (_editor_list_vbox); // TODO
 	content_main_top.add (_toolbar);
 	content_main.add (_pane);

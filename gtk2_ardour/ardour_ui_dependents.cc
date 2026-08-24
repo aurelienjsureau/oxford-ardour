@@ -48,6 +48,7 @@
 #include "luainstance.h"
 #include "luawindow.h"
 #include "mixer_ui.h"
+#include "oxford_acrylic.h"
 #include "recorder_ui.h"
 #include "trigger_page.h"
 #include "keyboard.h"
@@ -331,6 +332,9 @@ ARDOUR_UI::setup_windows ()
 	setup_toplevel_window (_main_window, "", this);
 	_main_window.maximize ();   /* TRIDENT : ouvrir en plein écran (maximisé) par défaut */
 	_main_window.show_all ();
+
+	OxfordAcrylic::attach (_main_window);
+	OxfordAcrylic::keep_opaque (menu_bar_base);
 
 	_tabs.set_show_tabs (false);
 

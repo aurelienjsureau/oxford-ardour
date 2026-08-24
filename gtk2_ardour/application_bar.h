@@ -34,6 +34,7 @@
 
 #include "main_clock.h"
 #include "mini_timeline.h"
+#include "oxford_timer.h"
 #include "shuttle_control.h"
 #include "startup_fsm.h"
 #include "transport_control.h"
@@ -135,6 +136,8 @@ private:
 	ArdourWidgets::ArdourButton   _auto_return_button;
 	TransportClock                _primary_clock;
 	TransportClock                _secondary_clock;
+	/* OXFORD : prend la place de la 2e horloge dans la barre de transport */
+	OxfordTimer                   _oxford_timer;
 	ArdourWidgets::ArdourVSpacer  _primary_clock_spacer;
 	ArdourWidgets::ArdourVSpacer  _secondary_clock_spacer;
 	ArdourWidgets::ArdourButton   _auditioning_alert_button;

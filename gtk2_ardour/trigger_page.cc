@@ -24,6 +24,8 @@
 
 #include <ytkmm/label.h>
 
+#include "oxford_acrylic.h"
+
 #include "pbd/properties.h"
 
 #include "gtkmm2ext/gtk_ui.h"
@@ -188,6 +190,7 @@ TriggerPage::TriggerPage ()
 
 	/* Top-level Layout */
 	content_app_bar.add (_application_bar);
+	OxfordAcrylic::keep_opaque (content_app_bar);
 	content_main.add (_strip_group_box);
 	content_att_bottom.add (hpacker);
 	content_att_right.add (_sidebar_vbox);

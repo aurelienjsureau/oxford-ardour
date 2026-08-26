@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<title>Oxford Console</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&family=Saira+Condensed:wght@500;600;700&display=swap">
+
+<style>
+  :root {
+    --ground: #eceef1; --panel: #f7f8f9; --ink: #1c2128;
+    --ink-2: #4d5761; --ink-3: #737e8a; --rule: #d2d7dd; --accent: #4e6b16;
+    --chassis-a: #3d4650; --chassis-b: #333b44; --chassis-rule: #4b545f;
+    --sub: #2c333c; --phosphor: #a8e05f; --amber: #f0a830;
+    --lf: #5b9bd5; --lim: #d4453f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #191d23; --panel: #21262d; --ink: #e3e7ec;
+      --ink-2: #a8b2bd; --ink-3: #7b8592; --rule: #333a43; --accent: #a8e05f;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #191d23; --panel: #21262d; --ink: #e3e7ec;
+    --ink-2: #a8b2bd; --ink-3: #7b8592; --rule: #333a43; --accent: #a8e05f;
+  }
+
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    font-size: 16px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+  }
+  .mono { font-family: 'IBM Plex Mono', ui-monospace, Consolas, monospace; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 28px 96px; }
+
+  [data-lang="en"] { display: none; }
+  html[lang="en"] [data-lang="en"] { display: revert; }
+  html[lang="en"] [data-lang="fr"] { display: none; }
+
+  header { padding: 64px 0 34px; border-bottom: 1px solid var(--rule); }
+  .topline { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
+  h1 {
+    font-family: 'Saira Condensed', 'Arial Narrow', sans-serif;
+    font-weight: 700; font-size: 60px; line-height: 0.9; margin: 0;
+    letter-spacing: 0.05em; text-wrap: balance;
+  }
+  .eyebrow {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: 11.5px; letter-spacing: 0.28em; color: var(--ink-3); margin-top: 12px;
+  }
+  .lede { margin-top: 24px; max-width: 62ch; color: var(--ink-2); font-size: 17px; }
+
+  .langbtn { flex-shrink: 0; display: flex; border: 1px solid var(--rule); border-radius: 3px; overflow: hidden; background: var(--panel); }
+  .langbtn button {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: 11px; letter-spacing: 0.1em; padding: 7px 12px;
+    background: transparent; color: var(--ink-3); border: 0; cursor: pointer;
+  }
+  .langbtn button[aria-pressed="true"] { background: var(--ink); color: var(--ground); }
+  .langbtn button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+  section { padding-top: 52px; }
+  h2 {
+    font-family: 'Saira Condensed', 'Arial Narrow', sans-serif;
+    font-weight: 600; font-size: 27px; line-height: 1.15; margin: 0 0 12px;
+    letter-spacing: 0.015em; text-wrap: balance;
+  }
+  section p { margin: 0 0 12px; max-width: 62ch; color: var(--ink-2); }
+  section p:last-of-type { margin-bottom: 0; }
+
+  figure { margin: 26px 0 0; }
+  figure img {
+    display: block; max-width: 100%; height: auto;
+    border: 1px solid var(--rule); border-radius: 4px;
+    box-shadow: 0 3px 14px rgba(0,0,0,0.24);
+  }
+  .shot-tall { max-width: 420px; }
+  .shot-pair { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+  .shot-pair img { flex: 0 1 auto; }
+  figcaption { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11.5px; color: var(--ink-3); margin-top: 12px; }
+
+  .panel {
+    background: linear-gradient(180deg, var(--chassis-a), var(--chassis-b));
+    border: 1px solid var(--chassis-rule); border-radius: 4px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 2px 8px rgba(0,0,0,0.22);
+    padding: 22px 24px 24px; overflow-x: auto;
+  }
+  .altrow { display: flex; align-items: center; gap: 20px; min-width: 560px; }
+  .strip { flex-grow: 1; background: var(--sub); border: 1px solid #454e59; border-radius: 3px;
+           padding: 10px 6px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .strip .s-name { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 9.5px; letter-spacing: 0.05em; color: #8b96a3; }
+  .readout {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    background: #0a0d12; border: 1px solid #10151c; border-radius: 2px;
+    padding: 4px 10px; font-size: 12.5px; color: var(--phosphor);
+    text-align: center; font-variant-numeric: tabular-nums;
+  }
+
+  .dl { display: flex; gap: 12px; margin-top: 22px; flex-wrap: wrap; }
+  .dl a {
+    font-family: 'Saira Condensed', 'Arial Narrow', sans-serif;
+    font-size: 18px; letter-spacing: 0.04em; text-decoration: none;
+    padding: 11px 22px; border-radius: 3px; border: 1px solid transparent;
+  }
+  .dl-main { background: var(--ink); color: var(--ground); }
+  .dl-main:hover { background: var(--ink-2); color: var(--ground); }
+  .dl-alt { border-color: var(--rule); color: var(--ink-2); }
+  .dl-alt:hover { border-color: var(--ink-3); color: var(--ink); }
+  .dl a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  section ul { margin: 20px 0 0; padding-left: 20px; max-width: 62ch; color: var(--ink-2); }
+  section ul li { margin-bottom: 10px; }
+  section ul li::marker { color: var(--ink-3); }
+  section ul strong { color: var(--ink); font-weight: 500; }
+
+  dl { margin: 22px 0 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px 34px; }
+  dt { font-family: 'Saira Condensed', 'Arial Narrow', sans-serif; font-weight: 600; font-size: 18px; color: var(--ink); }
+  dd { margin: 5px 0 0; color: var(--ink-2); font-size: 15px; }
+
+  footer {
+    margin-top: 60px; padding-top: 22px; border-top: 1px solid var(--rule);
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: 11.5px; color: var(--ink-3); line-height: 1.8;
+  }
+
+  @media (max-width: 620px) {
+    h1 { font-size: 44px; }
+    dl { grid-template-columns: minmax(0, 1fr); }
+    .wrap { padding: 0 18px 64px; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <div class="topline">
+      <div>
+        <h1>OXFORD</h1>
+        <div class="eyebrow">REFERENCE CONSOLE &middot; OXF-R3</div>
+      </div>
+      <div class="langbtn">
+        <button type="button" id="btn-fr" aria-pressed="true">FR</button>
+        <button type="button" id="btn-en" aria-pressed="false">EN</button>
+      </div>
+    </div>
+    <p class="lede" data-lang="fr">Un fork d'Ardour où la tranche de console est câblée dans chaque piste, et non ajoutée en plugin.</p>
+    <p class="lede" data-lang="en">A fork of Ardour where the channel strip is wired into every track rather than added as a plugin.</p>
+    <p class="lede" data-lang="fr">Tout ce qui colore le son est modelé sur du matériel Sony du milieu des années 90, dans l'ordre où le signal le traversait&nbsp;: le magnétophone numérique <strong>PCM-3348</strong> à la prise, en tête de chaque piste&nbsp;; la console <strong>OXF-R3</strong> pour l'EQ, la dynamique et son propre convertisseur de sortie&nbsp;; le convertisseur de mastering <strong>PCM-1630</strong> tout en bout de master. Le DSP est écrit de zéro.</p>
+    <p class="lede" data-lang="en">Everything that colours the sound is modelled on mid-1990s Sony hardware, in the order the signal passed through it: the <strong>PCM-3348</strong> digital recorder at the head of every track; the <strong>OXF-R3</strong> console for EQ, dynamics and its own output converter; the <strong>PCM-1630</strong> mastering converter at the very end of the master. The DSP is written from scratch.</p>
+    <p class="lede mono" style="font-size: 12.5px; margin-top: 20px;" data-lang="fr">Toutes les images de cette page sont des captures du logiciel.</p>
+    <p class="lede mono" style="font-size: 12.5px; margin-top: 20px;" data-lang="en">Every image on this page is a screenshot of the software.</p>
+  </header>
+
+  <section>
+    <h2 data-lang="fr">Où ça se passe</h2>
+    <h2 data-lang="en">Where it lives</h2>
+    <p data-lang="fr">Le panneau est ancré au bord droit du mixer et suit la piste sélectionnée. Tout s'y règle sans ouvrir la moindre fenêtre. Dans les tranches, la ligne <span class="mono" style="font-size: 14px;">Oxford</span> est le processeur lui-même&nbsp;: il est à sa place dans la chaîne, et il se bypasse comme les autres.</p>
+    <p data-lang="en">The panel is docked to the right edge of the mixer and follows the selected track. Everything is set there without opening a single window. In the strips, the <span class="mono" style="font-size: 14px;">Oxford</span> entry is the processor itself: it sits in its place in the chain, and bypasses like any other.</p>
+    <figure>
+      <img src="img/vue-ensemble.jpg" alt="Le mixer d'Oxford avec le panneau de console ancré au bord droit, sur la piste de caisse claire">
+    </figure>
+  </section>
+
+  <section>
+    <h2 data-lang="fr">Dynamique</h2>
+    <h2 data-lang="en">Dynamics</h2>
+    <p data-lang="fr">Quatre étages en série sur chaque voie&nbsp;: gate, expandeur, compresseur, limiteur. En haut, la courbe de transfert des quatre réunis, avec les seuils repérés G, C et L, et un point qui suit le signal. En dessous, la réduction de chaque étage.</p>
+    <p data-lang="en">Four stages in series on every channel: gate, expander, compressor, limiter. At the top, the combined transfer curve with the thresholds marked G, C and L, and a dot tracking the signal. Below it, each stage's reduction.</p>
+    <p data-lang="fr">La détection est en feed-forward, comme sur l'unité d'origine&nbsp;: la réduction se calcule sur le niveau d'entrée, rien ne revient de la sortie, et tout le détecteur travaille en décibels. Le limiteur fait exception en visant le niveau de sortie, après le compresseur et son makeup.</p>
+    <p data-lang="en">Detection is feed-forward, as on the original unit: reduction is computed from the input level, nothing is fed back from the output, and the whole detector works in decibels. The limiter is the exception, aiming at the output level, after the compressor and its makeup.</p>
+    <p data-lang="fr">Un clic sur le nom d'une section la replie.</p>
+    <p data-lang="en">Clicking a section name folds it away.</p>
+    <figure>
+      <img class="shot-tall" src="img/dyn.png" alt="Section dynamique du panneau Oxford : courbe de transfert, VU de réduction, gate, expandeur, compresseur et limiteur">
+    </figure>
+  </section>
+
+  <section>
+    <h2 data-lang="fr">Courbe EQ</h2>
+    <h2 data-lang="en">EQ curve</h2>
+    <p data-lang="fr">Les cinq pastilles se déplacent à la souris&nbsp;: horizontalement la fréquence, verticalement le gain. La molette règle le Q. Les deux pastilles crème sont les filtres HP et LP&nbsp;: horizontalement la fréquence, verticalement la pente, de 6 à 36&nbsp;dB/oct.</p>
+    <p data-lang="en">The five handles move with the mouse: sideways for frequency, up and down for gain. The wheel sets Q. The two cream handles are the HP and LP filters: sideways for frequency, up and down for slope, 6 to 36&nbsp;dB/oct.</p>
+    <p data-lang="fr">La courbe tracée est la réponse réelle du filtre, calculée avec les mêmes formules que l'audio.</p>
+    <p data-lang="en">The curve drawn is the filter's real response, computed with the same formulas as the audio.</p>
+    <figure>
+      <img class="shot-tall" src="img/eq.png" alt="Section EQ du panneau Oxford : courbe avec cinq pastilles colorées, cinq bandes et filtres HP et LP">
+    </figure>
+  </section>
+
+  <section>
+    <h2 data-lang="fr">Limiteur de sortie</h2>
+    <h2 data-lang="en">Output limiter</h2>
+    <p data-lang="fr">Modelé sur l'Oxford Limiter&nbsp;: c'est de là que viennent le Knee et l'Enhance, qui densifie le signal au lieu de l'écrêter. Safe borne l'attaque, Auto-Comp adapte le release au signal.</p>
+    <p data-lang="en">Modelled on the Oxford Limiter: that's where Knee and Enhance come from, the latter densifying the signal instead of clipping it. Safe bounds the attack, Auto-Comp adapts the release to the signal.</p>
+    <p data-lang="fr">Il est placé <em>après</em> le modèle de convertisseur, tout en bout de master&nbsp;: le PCM-1630 recrée des crêtes, et limiter avant lui les laisserait ressortir.</p>
+    <p data-lang="en">It sits <em>after</em> the converter model, at the very end of the master: the PCM-1630 recreates peaks, and limiting before it would let them back out.</p>
+    <figure>
+      <img style="max-width: 472px;" src="img/limiteur.png" alt="Limiteur de sortie : Thresh, Att, Rel, Knee, Enh, bascules Safe et Auto-Comp, VU GR et OUT">
+    </figure>
+  </section>
+
+  <section>
+    <h2 data-lang="fr">Profil PCM-1630</h2>
+    <h2 data-lang="en">PCM-1630 profile</h2>
+    <p data-lang="fr">Un réseau entraîné sur un vrai convertisseur Sony PCM-1630, encadré par deux gains d'entrée et de sortie. Ce n'est pas une émulation écrite à la main mais une capture&nbsp;: on ne règle pas ses coefficients, seulement ce qu'on lui envoie et ce qu'on récupère. C'est un module à part sur le master, qui se bypasse comme les autres.</p>
+    <p data-lang="en">A network trained on a real Sony PCM-1630 converter, framed by an input and an output gain. It is not a hand-written emulation but a capture: you don't tune its coefficients, only what you feed it and what you take back. It's a separate module on the master, bypassable like the others.</p>
+    <figure>
+      <img style="max-width: 472px;" src="img/pcm.png" alt="Module PCM-1630 : deux potards In et Out">
+    </figure>
+  </section>
+
+  <section>
+    <h2 data-lang="fr">Régie</h2>
+    <h2 data-lang="en">Monitoring</h2>
+    <p data-lang="fr">La section monitor d'Ardour a quitté le bord du mixer pour venir dans le panneau, sur la vue master&nbsp;: modes de solo (SiP, PFL, AFL), Solo Boost et SiP Cut, Dim, Mono, coupure et inversion par côté, niveau de contrôle et choix de la sortie.</p>
+    <p data-lang="en">Ardour's monitor section has moved out of the mixer edge and into the panel, on the master view: solo modes (SiP, PFL, AFL), Solo Boost and SiP Cut, Dim, Mono, per-side mute and invert, control-room level and output choice.</p>
+    <figure>
+      <img style="max-width: 400px;" src="img/monitor.png" alt="Section régie : modes de solo, Solo Boost, SiP Cut et Dim">
+    </figure>
+  </section>
+
+  <section>
+    <h2 data-lang="fr">Lien par Alt</h2>
+    <h2 data-lang="en">Alt-link</h2>
+    <p data-lang="fr">Alt enfoncé pendant qu'on tourne un potard applique le réglage à toutes les pistes sélectionnées. Vaut aussi pour les boutons et pour les pastilles de la courbe EQ. C'est le seul schéma de cette page&nbsp;: un geste ne se photographie pas.</p>
+    <p data-lang="en">Holding Alt while turning a knob applies the setting to every selected track. It works on the buttons and on the EQ curve handles too. This is the one diagram on the page: you can't photograph a gesture.</p>
+    <figure>
+      <div class="panel">
+        <div class="altrow">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:8px;flex-shrink:0">
+            <span class="mono" style="font-size:11px;letter-spacing:.12em;color:#d4a02a;border:1px solid #6a5a2a;border-radius:3px;padding:3px 10px;background:#2f2a17">ALT</span>
+            <svg viewBox="0 0 60 60" width="68" height="68" aria-hidden="true">
+              <defs>
+                <radialGradient id="kf" cx="34%" cy="26%" r="72%">
+                  <stop offset="0%" stop-color="#eef1f4"/><stop offset="52%" stop-color="#bcc3ca"/><stop offset="100%" stop-color="#79818a"/>
+                </radialGradient>
+              </defs>
+              <circle cx="30" cy="30" r="27" fill="none" stroke="#d4a02a" stroke-width="2"/>
+              <circle cx="30" cy="30" r="23" fill="none" stroke="#59616a" stroke-width="6" stroke-dasharray="1.7 3.3"/>
+              <circle cx="30" cy="30" r="19.5" fill="url(#kf)" stroke="#69717a" stroke-width="1"/>
+              <line x1="30" y1="30" x2="30" y2="14" stroke="#fff" stroke-width="2.6" stroke-linecap="round" transform="rotate(38 30 30)"/>
+            </svg>
+            <span class="readout">+3,5</span>
+          </div>
+          <svg viewBox="0 0 80 110" width="80" height="110" style="flex-shrink:0" aria-hidden="true">
+            <g fill="none" stroke="#d4a02a" stroke-width="1.5" stroke-dasharray="4 4" opacity=".9">
+              <path d="M4,55 C30,55 36,18 74,18"/><path d="M4,55 C30,55 36,41 74,41"/>
+              <path d="M4,55 L74,55"/><path d="M4,55 C30,55 36,69 74,69"/><path d="M4,55 C30,55 36,92 74,92"/>
+            </g>
+            <g fill="#d4a02a">
+              <path d="M75,18 l-6.5,-3.2 l0,6.4 z"/><path d="M75,41 l-6.5,-3.2 l0,6.4 z"/><path d="M75,55 l-6.5,-3.2 l0,6.4 z"/>
+              <path d="M75,69 l-6.5,-3.2 l0,6.4 z"/><path d="M75,92 l-6.5,-3.2 l0,6.4 z"/>
+            </g>
+          </svg>
+          <div style="display:flex;gap:9px;flex-grow:1" id="alt-strips"></div>
+        </div>
+      </div>
+    </figure>
+  </section>
+
+  <section>
+    <h2 data-lang="fr">Finition</h2>
+    <h2 data-lang="en">Finish</h2>
+    <p data-lang="fr">Le châssis est légèrement translucide&nbsp;: le bureau transparaît derrière, flouté, teinté à 8&nbsp;% de la couleur du thème actif. Les commandes, elles, restent opaques. C'est visible sur les captures ci-dessus, dans les coins.</p>
+    <p data-lang="en">The chassis is slightly translucent: the desktop shows through behind it, blurred, tinted at 8&nbsp;% with the active theme's colour. The controls themselves stay opaque. You can see it in the corners of the screenshots above.</p>
+  </section>
+
+  <section>
+    <h2 data-lang="fr">Le reste</h2>
+    <h2 data-lang="en">The rest</h2>
+    <dl>
+      <div>
+        <dt data-lang="fr">Cinq lois de courbe</dt><dt data-lang="en">Five curve laws</dt>
+        <dd data-lang="fr">Dont une topologie parallèle réciproque où les cuts sont le miroir exact des boosts.</dd>
+        <dd data-lang="en">One of them a reciprocal parallel topology where cuts mirror boosts exactly.</dd>
+      </div>
+      <div>
+        <dt data-lang="fr">Coloration bande</dt><dt data-lang="en">Tape colour</dt>
+        <dd data-lang="fr">Un étage inspiré du magnétophone numérique Sony PCM-3348, en tête de chaque piste.</dd>
+        <dd data-lang="en">A stage modelled on the Sony PCM-3348 digital recorder, at the head of every track.</dd>
+      </div>
+      <div>
+        <dt data-lang="fr">Voies de retour</dt><dt data-lang="en">Return channels</dt>
+        <dd data-lang="fr">Les bus n'ont que LF/MF/HF plus compresseur et limiteur, comme sur la table d'origine.</dd>
+        <dd data-lang="en">Busses have only LF/MF/HF plus compressor and limiter, as on the original desk.</dd>
+      </div>
+      <div>
+        <dt data-lang="fr">Thèmes</dt><dt data-lang="en">Themes</dt>
+        <dd data-lang="fr">Oxford, Warm, Amber et Night. Châssis, potards et écrans suivent le thème actif.</dd>
+        <dd data-lang="en">Oxford, Warm, Amber and Night. Chassis, knobs and screens follow the active theme.</dd>
+      </div>
+    </dl>
+  </section>
+
+  <section id="telecharger">
+    <h2 data-lang="fr">Télécharger</h2>
+    <h2 data-lang="en">Download</h2>
+    <p data-lang="fr">Oxford dérive d'Ardour et suit sa licence GPL. Les sources sont dans le dépôt, l'installateur dans les releases.</p>
+    <p data-lang="en">Oxford derives from Ardour and follows its GPL licence. The source is in the repository, the installer in the releases.</p>
+    <div class="dl">
+      <a class="dl-main" href="https://github.com/aurelienjsureau/oxford-ardour/releases/latest">
+        <span data-lang="fr">Installateur Windows</span><span data-lang="en">Windows installer</span>
+      </a>
+      <a class="dl-alt" href="https://github.com/aurelienjsureau/oxford-ardour">
+        <span data-lang="fr">Le code source</span><span data-lang="en">Source code</span>
+      </a>
+    </div>
+    <p class="mono" style="font-size: 12.5px; margin-top: 16px;" data-lang="fr">Lis la configuration requise avant&nbsp;: il y a un prérequis processeur qui ne pardonne pas.</p>
+    <p class="mono" style="font-size: 12.5px; margin-top: 16px;" data-lang="en">Read the requirements first: there is one CPU prerequisite that does not forgive.</p>
+  </section>
+
+  <section>
+    <h2 data-lang="fr">Configuration requise</h2>
+    <h2 data-lang="en">System requirements</h2>
+    <ul data-lang="fr">
+      <li><strong>Windows 64 bits.</strong> Développé et testé sur Windows&nbsp;11.</li>
+      <li><strong>Un processeur avec AVX2 et FMA</strong> — Intel à partir de 2013 (Haswell), AMD à partir de 2015. En dessous, le modèle du PCM-1630 ne peut pas tourner.</li>
+      <li>Une interface audio via PortAudio&nbsp;: ASIO, WASAPI ou WDM-KS.</li>
+      <li>Environ 390&nbsp;Mo sur le disque.</li>
+      <li><strong>L'installateur n'est pas signé.</strong> Windows affichera «&nbsp;Windows a protégé votre ordinateur&nbsp;»&nbsp;; il faut passer par <em>Informations complémentaires</em> puis <em>Exécuter quand même</em>. C'est normal pour un exécutable sans certificat, et c'est aussi ce que fait un vrai malware — méfie-toi de tout binaire dont tu ne connais pas la provenance, celui-ci compris.<br>
+        L'avertissement vient de l'étiquette que Windows colle aux fichiers venus d'Internet. Pour l'enlever&nbsp;: <span class="mono" style="font-size: 14px;">Unblock-File .\Oxford-Setup.exe</span> dans PowerShell. Un fichier reçu sur clé USB ne la porte pas du tout.</li>
+    </ul>
+    <ul data-lang="en">
+      <li><strong>64-bit Windows.</strong> Built and tested on Windows&nbsp;11.</li>
+      <li><strong>A CPU with AVX2 and FMA</strong> — Intel from 2013 (Haswell), AMD from 2015. Below that, the PCM-1630 model cannot run.</li>
+      <li>An audio interface through PortAudio: ASIO, WASAPI or WDM-KS.</li>
+      <li>About 390&nbsp;MB of disk space.</li>
+      <li><strong>The installer is not signed.</strong> Windows will show "Windows protected your PC"; you have to go through <em>More info</em> then <em>Run anyway</em>. That's normal for an executable without a certificate — and it's also what real malware looks like, so be wary of any binary whose origin you don't know, this one included.<br>
+        The warning comes from the tag Windows attaches to files that arrived from the internet. To remove it: <span class="mono" style="font-size: 14px;">Unblock-File .\Oxford-Setup.exe</span> in PowerShell. A file handed over on a USB stick never carries it.</li>
+    </ul>
+  </section>
+
+  <footer>
+    <span data-lang="fr">Projet personnel, inspiré d'une console Sony Oxford OXF-R3 de 1995.<br>Aucun lien avec Sony ni Sonnox. Tout le DSP est original.</span>
+    <span data-lang="en">A personal project, inspired by a 1995 Sony Oxford OXF-R3 console.<br>No affiliation with Sony or Sonnox. All DSP is original.</span>
+  </footer>
+
+</div>
+
+<script>
+(function () {
+  var NS = 'http://www.w3.org/2000/svg';
+  function knob(angle, size) {
+    var s = document.createElementNS(NS, 'svg');
+    s.setAttribute('viewBox', '0 0 60 60');
+    s.setAttribute('width', size); s.setAttribute('height', size);
+    s.setAttribute('aria-hidden', 'true');
+    s.innerHTML =
+      '<circle cx="30" cy="30" r="23" fill="none" stroke="#59616a" stroke-width="6" stroke-dasharray="1.7 3.3"/>'
+    + '<circle cx="30" cy="30" r="19.5" fill="url(#kf)" stroke="#69717a" stroke-width="1"/>'
+    + '<line x1="30" y1="30" x2="30" y2="14" stroke="#fff" stroke-width="3" stroke-linecap="round" transform="rotate(' + angle + ' 30 30)"/>';
+    return s;
+  }
+  var as = document.getElementById('alt-strips');
+  ['SNARE UP','SNARE DN','TOM 1','TOM 2','OVERHEADS'].forEach(function (n) {
+    var d = document.createElement('div'); d.className = 'strip';
+    var s = document.createElement('div'); s.className = 's-name'; s.textContent = n;
+    var v = document.createElement('div'); v.className = 'readout';
+    v.style.fontSize = '10.5px'; v.style.padding = '3px 6px';
+    v.textContent = '+3,5';
+    d.appendChild(s); d.appendChild(knob(38, 36)); d.appendChild(v);
+    as.appendChild(d);
+  });
+
+  var fr = document.getElementById('btn-fr'), en = document.getElementById('btn-en');
+  function setLang(l) {
+    document.documentElement.lang = l;
+    fr.setAttribute('aria-pressed', l === 'fr' ? 'true' : 'false');
+    en.setAttribute('aria-pressed', l === 'en' ? 'true' : 'false');
+    try { localStorage.setItem('oxford-lang', l); } catch (e) {}
+  }
+  var saved = 'fr';
+  try { saved = localStorage.getItem('oxford-lang') || 'fr'; } catch (e) {}
+  setLang(saved === 'en' ? 'en' : 'fr');
+  fr.addEventListener('click', function () { setLang('fr'); });
+  en.addEventListener('click', function () { setLang('en'); });
+})();
+</script>
+
+</body>
+</html>

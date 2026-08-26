@@ -97,10 +97,23 @@ public:
     }
 
     // Charge le module MasterTape (NAM/PCM-1630) — uniquement utile sur le Tail (master).
+    // Le modèle n'est RELU que si le fichier ou le sample rate change : configure_io()
+    // repasse ici à chaque reconfiguration d'I/O du master (plusieurs fois par
+    // chargement de session), et un re-parsing complet du .nam coûte ~36 ms PAR CANAL.
     void loadMasterTape(double sr, int maxBlock, const std::string& namPath)
     {
+        if (masterTape.enabled() && namPath == namLoadedFrom && sr == namLoadedSr) {
+            return;                       // déjà en mémoire, rien à refaire
+        }
         masterTape.prepare(sr, maxBlock);
-        if (!namPath.empty() && masterTape.loadModel(namPath)) masterTape.setEnabled(true);
+        if (!namPath.empty() && masterTape.loadModel(namPath)) {
+            masterTape.setEnabled(true);
+            namLoadedFrom = namPath;
+            namLoadedSr   = sr;
+        } else {
+            namLoadedFrom.clear();
+            namLoadedSr = 0.0;
+        }
     }
 
     // Traitement par BLOC (NAM est block-based). Sur le Tail : warmth+limiteur (per-sample)
@@ -169,4 +182,6 @@ private:
     OxfordLimiter  lim;       // limiteur de SORTIE, modelé sur l'Oxford Limiter
     OxfordConverter conv;     // DAC : toujours actif sur le master (Tail)
     MasterTapePCM1630 masterTape;   // module NAM PCM-1630 (Tail uniquement)
+    std::string namLoadedFrom;      // .nam actuellement en mémoire (cf. loadMasterTape)
+    double      namLoadedSr { 0.0 };
 };

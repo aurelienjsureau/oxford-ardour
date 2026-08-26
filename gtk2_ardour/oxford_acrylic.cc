@@ -24,8 +24,23 @@ namespace {
 
 #ifdef PLATFORM_WINDOWS
 
-/* 0xAABBGGRR. Nulle = flou pur : aucune teinte ne convient aux quatre thèmes. */
-static const DWORD kTint = 0x00000000;
+/* Teinte de la couche acrylique, 0xAABBGGRR. À alpha nul c'était du flou pur :
+ * les fonds traversants viraient au décor du bureau. Un VOILE FAIBLE aux
+ * couleurs du thème actif (une teinte fixe ne convenait pas aux quatre) les
+ * raccroche à la fenêtre sans rien perdre du flou. */
+static const double kTintAlpha = 0.08;   // 8 % : « un peu plus opaque », pas un aplat
+
+static DWORD
+tint ()
+{
+	bool failed = false;
+	const uint32_t c = UIConfiguration::instance ().color ("theme:bg1", &failed);   // 0xRRGGBBAA
+	const DWORD r = failed ? 0x20 : ((c >> 24) & 0xff);
+	const DWORD g = failed ? 0x20 : ((c >> 16) & 0xff);
+	const DWORD b = failed ? 0x20 : ((c >>  8) & 0xff);
+	const DWORD a = (DWORD) (kTintAlpha * 255.0 + 0.5);
+	return (a << 24) | (b << 16) | (g << 8) | r;
+}
 
 enum AccentState {
 	ACCENT_DISABLED                 = 0,
@@ -82,7 +97,7 @@ apply_to_hwnd (HWND hwnd, bool on)
 	AccentPolicy ap;
 	memset (&ap, 0, sizeof (ap));
 	ap.AccentState   = on ? ACCENT_ENABLE_ACRYLICBLURBEHIND : ACCENT_DISABLED;
-	ap.GradientColor = on ? (int) kTint : 0;
+	ap.GradientColor = on ? (int) tint () : 0;
 
 	WinCompAttrData data;
 	data.Attrib = WCA_ACCENT_POLICY;
@@ -198,15 +213,21 @@ attach_island (Gtk::Widget& w, bool root)
 }
 
 static void
+reapply_all ()
+{
+	for (std::vector<Gtk::Window*>::iterator i = s_windows.begin (); i != s_windows.end (); ++i) {
+		apply_to_window (*i);
+		(*i)->queue_draw ();
+	}
+}
+
+static void
 parameter_changed (std::string const& p)
 {
 	if (p != "oxford-acrylic") {
 		return;
 	}
-	for (std::vector<Gtk::Window*>::iterator i = s_windows.begin (); i != s_windows.end (); ++i) {
-		apply_to_window (*i);
-		(*i)->queue_draw ();
-	}
+	reapply_all ();
 }
 
 } /* anonymous namespace */
@@ -227,6 +248,8 @@ OxfordAcrylic::attach (Gtk::Window& w)
 	static bool connected = false;
 	if (!connected) {
 		UIConfiguration::instance ().ParameterChanged.connect (sigc::ptr_fun (&parameter_changed));
+		/* le voile est aux couleurs du thème : il se recalcule quand il change */
+		UIConfiguration::instance ().ColorsChanged.connect (sigc::ptr_fun (&reapply_all));
 		connected = true;
 	}
 

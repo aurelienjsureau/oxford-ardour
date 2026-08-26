@@ -120,7 +120,8 @@ private:
 	                 std::function<void(ARDOUR::OxfordChannel&, bool)> set,
 	                 std::function<bool(ARDOUR::OxfordChannel&)> get,
 	                 const char* capcol = "#1a2433");
-	Gtk::Widget* wrap_scroll (Gtk::Widget* w, bool hscroll = false);
+	Gtk::Widget* chrome_box (Gtk::Widget* w, int top, int bottom, int side);   // tôle brossée + marges (partie non défilante d'une page)
+	Gtk::Widget* wrap_scroll (Gtk::Widget* w, bool hscroll = false, int top = 10, int bottom = 10);
 	Gtk::Widget* subpanel (Gtk::Widget* w);   // tuile bleu clair (bi-ton) sur châssis crème
 	bool on_panel_expose (GdkEventExpose*);
 	bool on_outlim_expose (GdkEventExpose*);
@@ -136,6 +137,8 @@ private:
 	 * 0..4 = bandes (drag = freq+gain, molette = Q / overshoot en shelf),
 	 * 5 = HPF, 6 = LPF (drag = freq + engage, molette = pente 6..36, <6 = off) */
 	int    _eq_drag = -1;                       // handle en cours de drag (-1 = aucun)
+	double _eq_drag_y0 = 0.0;                   // y au clic : HP/LP, le déplacement VERTICAL règle la pente
+	int    _eq_drag_slope0 = 12;                // pente du filtre au clic (dB/oct)
 	double _eq_scale = 20.0;                    // demi-échelle verticale AUTO de l'écran EQ (dB)
 	double _eq_dotx[7] = {0,0,0,0,0,0,0};       // position des pastilles (maj à l'expose)
 	double _eq_doty[7] = {0,0,0,0,0,0,0};

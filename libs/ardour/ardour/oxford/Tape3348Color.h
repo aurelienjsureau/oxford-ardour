@@ -40,7 +40,9 @@ public:
     }
 
     void setEnabled(bool on)   { enabled = on; }
-    void setDrive(double d)    { drive = clamp(d, 0.0, 1.0); }            // 0..1
+    void setDrive(double d)    { drive = clamp(d, 0.0, 1.0);              // 0..1
+                                 driveG  = 1.0 + 4.0 * drive;             // jusqu'à +14 dB d'attaque
+                                 driveMk = 1.0 / driveG; }                // auto-gain (compense le drive)
     // Emphasis -1..+1 : >0 accentue les aigus avant la sat (et les atténue après),
     // <0 l'inverse. 0 = neutre.
     void setEmphasis(double e) { emphasis = clamp(e, -1.0, 1.0); updateEmphasis(); }
@@ -77,9 +79,9 @@ public:
         double s = empPre.process(x);
 
         // --- 2) drive + auto-gain ---
-        const double g  = 1.0 + 4.0 * drive;     // jusqu'à +14 dB d'attaque
-        const double mk = 1.0 / g;               // auto-gain (compense le drive)
-        s *= g;
+        // g et mk ne dépendent que du knob : pré-calculés par setDrive (identiques
+        // au bit près, c'est le même 1.0 + 4.0*drive), plus recalculés par échantillon.
+        s *= driveG;
 
         // --- 3) étage non-linéaire : analogique doux + grain numérique ---
         // (a) saturation analogique douce (proportionnelle, 2e/3e harm via asymétrie)
@@ -90,13 +92,17 @@ public:
         //     (à l'inverse d'une sat analogique). Le pas q est piloté par 'grain'
         //     (et non par le drive) : grain=0 -> ~20 bits (propre), grain=1 ->
         //     ~12 bits (grain marqué, queues de réverbe qui "décrochent").
-        const double q = qStep;                          // pas de quantification (pré-calculé par setGrain)
-        const double quantized = std::round(ana / q) * q;
-        // mélange analogique / numérique selon 'grain'
-        double y = ana + grain * (quantized - ana);
+        // grain == 0 : le mélange rend exactement 'ana' (0.0 * quoi que ce soit),
+        // la quantification est donc du calcul jeté. On la saute — bit-exact.
+        double y = ana;
+        if (grain != 0.0) {
+            const double q = qStep;                      // pas de quantification (pré-calculé par setGrain)
+            const double quantized = std::round(ana / q) * q;
+            y = ana + grain * (quantized - ana);         // mélange analogique / numérique
+        }
 
         // --- auto-gain ---
-        y *= mk;
+        y *= driveMk;
 
         // --- 4) de-emphasis (post, miroir) ---
         y = empPost.process(y);
@@ -156,6 +162,10 @@ private:
     double sampleRate { 48000.0 };
     bool   enabled { false }, limOn { true };
     double drive { 0.3 }, emphasis { 0.0 }, grain { 0.5 };
+    /* dérivés de 'drive', tenus à jour par setDrive — doivent rester cohérents
+     * avec la valeur par défaut ci-dessus (0.3 -> g = 2.2). */
+    double driveG  { 1.0 + 4.0 * 0.3 };
+    double driveMk { 1.0 / (1.0 + 4.0 * 0.3) };
     double qStep { 3.0517578125e-05 };      // = 2^-15 (grain 0.5 -> 16 bits), tenu à jour par setGrain
     double limCeil { 0.985 };               // ~ -0.13 dBFS
     double limGain { 1.0 }, limRelC { 0.0 };

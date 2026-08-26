@@ -10,6 +10,7 @@
 #include <cstring>
 #include <vector>
 
+#include <ytkmm/alignment.h>
 #include <ytkmm/separator.h>
 #include <ytkmm/frame.h>
 #include <ytkmm/comboboxtext.h>
@@ -364,9 +365,9 @@ OxfordConsolePanel::OxfordConsolePanel ()
 	{ Gdk::Color nc; nc.set_rgb_p (kPanelBg[0], kPanelBg[1], kPanelBg[2]); _nb.modify_bg (Gtk::STATE_NORMAL, nc); }
 	_chromeMain.push_back (&_nb);
 	_nb.append_page (*wrap_scroll (build_eq (false)));
-	_nb.append_page (*wrap_scroll (build_dyn (false)));
+	_nb.append_page (*build_dyn (false));   // page 1 : la vue dynamique porte son propre défilement (graphe épinglé)
 	_nb.append_page (*wrap_scroll (build_master ()));
-	_nb.append_page (*wrap_scroll (build_dyn (true)));   // page 3 : dynamique des BUS
+	_nb.append_page (*build_dyn (true));    // page 3 : dynamique des BUS
 	_nb.append_page (*wrap_scroll (build_eq (true)));    // page 4 : EQ des BUS
 	_box.pack_start (_nb, Gtk::PACK_EXPAND_WIDGET);
 
@@ -428,8 +429,8 @@ oxford_tip (const char* ctx, const char* lab)
 		if (l == "In")    { return _("Enables the band. When off it is removed from the computation (no residual colouration)."); }
 		if (l == "Shelf") { return _("Switches the band from a bell to a shelf. The Q knob then drives the overshoot."); }
 	}
-	if (c == "HP")  { return _("High-pass frequency (20–400 Hz). The slope is set with the button on the left."); }
-	if (c == "LP")  { return _("Low-pass frequency (1–20 kHz). The slope is set with the button on the left."); }
+	if (c == "HP")  { return _("High-pass frequency (20–400 Hz). The slope is set with the button on the left, or by dragging the dot up and down on the curve."); }
+	if (c == "LP")  { return _("Low-pass frequency (1–20 kHz). The slope is set with the button on the left, or by dragging the dot up and down on the curve."); }
 
 	if (c == "GATE") {
 		if (l == "On")  { return _("Noise gate: cuts below the threshold, with 4 dB of hysteresis to avoid chattering."); }
@@ -599,7 +600,7 @@ OxfordConsolePanel::build_eq (bool bus)
 
 	/* courbe de réponse en tête — pastilles draggables (freq/gain) + molette (Q) */
 	curve.set_size_request (-1, (int)(120*kUI));
-	ArdourWidgets::set_tooltip (curve, _("Equaliser response. Drag a dot to set the frequency and gain of its band, use the wheel for Q (overshoot in Shelf mode). The cream dots are the filters: dragging one engages it, the wheel changes its slope. Alt: the selection follows."));
+	ArdourWidgets::set_tooltip (curve, _("Equaliser response. Drag a dot to set the frequency and gain of its band, use the wheel for Q (overshoot in Shelf mode). The cream dots are the filters: dragging one engages it, sideways sets the frequency, up and down the slope (the wheel does it too). Alt: the selection follows."));
 	curve.signal_expose_event ().connect (sigc::mem_fun (*this, &OxfordConsolePanel::on_eq_expose));
 	curve.add_events (Gdk::BUTTON_PRESS_MASK | Gdk::BUTTON_RELEASE_MASK
 	                    | Gdk::POINTER_MOTION_MASK | Gdk::SCROLL_MASK);
@@ -765,24 +766,72 @@ OxfordConsolePanel::build_dyn (bool bus)
 	Gtk::DrawingArea& curve  = bus ? _dyn_curveB  : _dyn_curve;
 	Gtk::DrawingArea& meters = bus ? _dyn_metersB : _dyn_meters;
 
+	/* Graphe + VU : ÉPINGLÉS en haut de la page, hors du défilement. Empilés avec
+	 * les quatre sections, ils sortaient de l'écran dès qu'on descendait régler le
+	 * limiteur — or c'est justement là qu'on veut les voir. */
+	Gtk::VBox* head = Gtk::manage (new Gtk::VBox ());
+	head->set_spacing (1);
 	/* graphe transfert IN/OUT PLEINE LARGEUR */
 	curve.set_size_request (-1, (int)(105*kUI));
 	ArdourWidgets::set_tooltip (curve, _("Input/output transfer curve of the four sections combined. The moving dot is the detector level; the dotted lines mark the thresholds."));
 	curve.signal_expose_event ().connect (sigc::mem_fun (*this, bus ? &OxfordConsolePanel::on_dyn_exposeB : &OxfordConsolePanel::on_dyn_expose));
-	b->pack_start (curve, Gtk::PACK_SHRINK);
+	head->pack_start (curve, Gtk::PACK_SHRINK);
 	/* VU de GR HORIZONTAUX sous le graphe, barres fines (précis) */
 	meters.set_size_request (-1, (int)((bus ? 34 : 64)*kUI));
 	ArdourWidgets::set_tooltip (meters, _("Gain reduction of the four sections, 0 to 20 dB, with peak hold."));
 	meters.signal_expose_event ().connect (sigc::mem_fun (*this, bus ? &OxfordConsolePanel::on_dyn_metersB : &OxfordConsolePanel::on_dyn_meters_expose));
-	b->pack_start (meters, Gtk::PACK_SHRINK);
+	head->pack_start (meters, Gtk::PACK_SHRINK);
 
 	/* (Timing retiré de la GUI — non utilisé ; le DSP reste en loi Normal par défaut.) */
 
 	/* Les 4 sections sont EMPILÉES (comme l'écran réel OXF-R3), en-têtes colorés,
-	 * chacune avec son On + ses knobs (3/ligne) -> remplit la colonne, pas de vide. */
+	 * chacune avec son On + ses knobs -> remplit la colonne, pas de vide.
+	 * Nombre de potards par rangée calculé sur la largeur RÉELLE (le panneau ne
+	 * défile pas horizontalement : à fort scale DPI, 4 ne rentrent plus). */
+	const double knobW  = 56.0 * kKnob * trident_ui_scale ();
+	const int    perRow = (knobW * 4.0 <= 320.0 * kUI - 32.0) ? 4 : 3;
 	auto flow = [&](Gtk::VBox* col, std::vector<TridentKnob*> ks) {
 		Gtk::HBox* r=0; int n=0;
-		for (auto k : ks) { if (n%3==0){ r=Gtk::manage(new Gtk::HBox()); r->set_spacing(2); col->pack_start(*r,Gtk::PACK_SHRINK);} r->pack_start(*k,true,false); ++n; }
+		for (auto k : ks) { if (n%perRow==0){ r=Gtk::manage(new Gtk::HBox()); r->set_spacing(2); col->pack_start(*r,Gtk::PACK_SHRINK);} r->pack_start(*k,true,false); ++n; }
+	};
+	auto sec_title = [](Gtk::Label* l, const char* name, const char* color) {
+		char m[128];
+		std::snprintf (m, sizeof m, "<b><span foreground=\"%s\">%s</span></b>", color, name);
+		l->set_markup (m);   /* pas de "large" : le titre poussait le bouton On hors du bord */
+	};
+	/* Marqueur de repli DESSINÉ, pas écrit : les triangles Unicode (U+25BE/U+25B8)
+	 * sortaient en tofu — aucune police de la chaîne de repli ne les porte ici. */
+	auto make_tri = [](const char* color, std::shared_ptr<bool> open) -> Gtk::DrawingArea* {
+		double r = 0.8, g = 0.8, b = 0.8;
+		unsigned int rr = 0, gg = 0, bb = 0;
+		if (std::sscanf (color, "#%2x%2x%2x", &rr, &gg, &bb) == 3) {
+			r = rr / 255.0; g = gg / 255.0; b = bb / 255.0;
+		}
+		Gtk::DrawingArea* d = Gtk::manage (new Gtk::DrawingArea ());
+		const int s = (int) (11 * kUI);
+		d->set_size_request (s, s);
+		d->signal_expose_event ().connect ([d, r, g, b, open] (GdkEventExpose*) -> bool {
+			Glib::RefPtr<Gdk::Window> win = d->get_window ();
+			if (!win) { return false; }
+			Cairo::RefPtr<Cairo::Context> cr = win->create_cairo_context ();
+			Gtk::Allocation a = d->get_allocation ();
+			const double w = a.get_width (), h = a.get_height ();
+			const double cx = w * 0.5, cy = h * 0.5, k = std::min (w, h) * 0.30;
+			cr->set_source_rgb (r, g, b);
+			if (*open) {   /* déplié : pointe vers le bas */
+				cr->move_to (cx - k, cy - k * 0.6);
+				cr->line_to (cx + k, cy - k * 0.6);
+				cr->line_to (cx,     cy + k * 0.9);
+			} else {       /* replié : pointe vers la droite */
+				cr->move_to (cx - k * 0.6, cy - k);
+				cr->line_to (cx + k * 0.9, cy);
+				cr->line_to (cx - k * 0.6, cy + k);
+			}
+			cr->close_path ();
+			cr->fill ();
+			return true;
+		}, false);
+		return d;
 	};
 	auto section = [&](const char* name, const char* color,
 	                   std::function<void(OxfordChannel&,bool)> son,
@@ -796,9 +845,12 @@ OxfordConsolePanel::build_dyn (bool bus)
 		Gdk::Color barbg; barbg.set_rgb_p (kSubBg[0], kSubBg[1], kSubBg[2]); bar->modify_bg (Gtk::STATE_NORMAL, barbg); _chromeSub.push_back (bar);
 		bar->set_border_width (3);
 		Gtk::HBox* hd = Gtk::manage (new Gtk::HBox ()); hd->set_spacing (4);
+		std::shared_ptr<bool> open = std::make_shared<bool> (true);
+		Gtk::DrawingArea* tri = make_tri (color, open);
+		hd->pack_start (*tri, false, false);
 		Gtk::Label* l = Gtk::manage (new Gtk::Label ());
-		char m[96]; std::snprintf (m,sizeof m,"<b><span foreground=\"%s\">%s</span></b>",color,name);   /* pas de "large" : le titre poussait le bouton On hors du bord */
-		l->set_markup (m); l->set_alignment (0,0.5);
+		sec_title (l, name, color);
+		l->set_alignment (0,0.5);
 		hd->pack_start (*l, true, true);
 		_tipctx = name;   /* les knobs de la section qui suit héritent du contexte */
 		mkToggle (*hd, _("On"), false, son, gon, "#1a2433");   // libellé clair sur barre sombre
@@ -807,6 +859,17 @@ OxfordConsolePanel::build_dyn (bool bus)
 		Gtk::VBox* col = Gtk::manage (new Gtk::VBox ()); col->set_spacing (1);
 		Gtk::Widget* sp = subpanel (col);
 		b->pack_start (*sp, Gtk::PACK_SHRINK);
+		/* clic sur le titre = replier / déplier les potards de la section (le
+		 * bouton On, lui, mange ses propres clics) */
+		bar->add_events (Gdk::BUTTON_PRESS_MASK);
+		ArdourWidgets::set_tooltip (*bar, _("Click the name to fold this section away."));
+		bar->signal_button_press_event ().connect ([sp, tri, open] (GdkEventButton* ev) -> bool {
+			if (ev->type != GDK_BUTTON_PRESS || ev->button != 1) { return false; }
+			*open = !sp->get_visible ();
+			if (*open) { sp->show (); } else { sp->hide (); }
+			tri->queue_draw ();
+			return true;
+		}, false);
 		/* section absente des Returns (bus) : DÉTACHÉE quand un bus est sélectionné */
 		if (trackOnly) { reg_track_only (b, gap); reg_track_only (b, bar); reg_track_only (b, sp); }
 		return col;
@@ -858,7 +921,11 @@ OxfordConsolePanel::build_dyn (bool bus)
 	Gtk::Label* botpad = Gtk::manage (new Gtk::Label ()); botpad->set_size_request (1, 10);
 	b->pack_start (*botpad, Gtk::PACK_SHRINK);
 
-	return b;
+	/* page = bandeau fixe (graphe + VU) au-dessus de la partie qui défile */
+	Gtk::VBox* page = Gtk::manage (new Gtk::VBox ());
+	page->pack_start (*chrome_box (head, 10, 2, 10), Gtk::PACK_SHRINK);
+	page->pack_start (*wrap_scroll (b, false, 2, 10), Gtk::PACK_EXPAND_WIDGET);
+	return page;
 }
 
 Gtk::Widget*
@@ -1203,14 +1270,16 @@ OxfordConsolePanel::set_bus_mode (bool bus)
 	}
 }
 
+/* Tôle brossée + marges autour d'un contenu : la page couvre le châssis, elle
+ * doit porter la même texture, sinon le fond du panneau est masqué par un aplat.
+ * Marges hautes/basses réglables : la vue dynamique empile deux de ces boîtes
+ * (le graphe fixe, puis la partie défilante) et le raccord doit rester serré. */
 Gtk::Widget*
-OxfordConsolePanel::wrap_scroll (Gtk::Widget* w, bool hscroll)
+OxfordConsolePanel::chrome_box (Gtk::Widget* w, int top, int bottom, int side)
 {
 	Gtk::EventBox* eb = Gtk::manage (new Gtk::EventBox ());
 	Gdk::Color c; c.set_rgb_p (kPanelBg[0], kPanelBg[1], kPanelBg[2]);
 	eb->modify_bg (Gtk::STATE_NORMAL, c);
-	/* la page couvre le châssis : elle doit porter la même tôle brossée,
-	 * sinon le fond texturé du panneau est masqué par un aplat */
 	eb->set_app_paintable (true);
 	eb->signal_expose_event ().connect ([eb] (GdkEventExpose*) -> bool {
 		Glib::RefPtr<Gdk::Window> win = eb->get_window ();
@@ -1221,10 +1290,21 @@ OxfordConsolePanel::wrap_scroll (Gtk::Widget* w, bool hscroll)
 		                    kPanelBg[0], kPanelBg[1], kPanelBg[2]);
 		return false;
 	}, false);
-	/* respiration en haut : la première rangée de potards touchait le bord
-	 * supérieur du châssis (et son joint) */
-	eb->set_border_width (10);
-	eb->add (*w);
+	/* respiration : la première rangée de potards touchait le bord supérieur
+	 * du châssis (et son joint) */
+	Gtk::Alignment* al = Gtk::manage (new Gtk::Alignment (0.0, 0.0, 1.0, 1.0));
+	al->set_padding (top, bottom, side, side);
+	al->add (*w);
+	eb->add (*al);
+	_chromeMain.push_back (eb);
+	return eb;
+}
+
+Gtk::Widget*
+OxfordConsolePanel::wrap_scroll (Gtk::Widget* w, bool hscroll, int top, int bottom)
+{
+	Gdk::Color c; c.set_rgb_p (kPanelBg[0], kPanelBg[1], kPanelBg[2]);
+	Gtk::Widget* eb = chrome_box (w, top, bottom, 10);
 	Gtk::ScrolledWindow* sw = Gtk::manage (new Gtk::ScrolledWindow ());
 	/* la régie d'Ardour est plus large que le panneau : sans défilement
 	 * horizontal, ses commandes (le On du limiteur par ex.) sont COUPÉES. */
@@ -1232,7 +1312,6 @@ OxfordConsolePanel::wrap_scroll (Gtk::Widget* w, bool hscroll)
 	sw->set_shadow_type (Gtk::SHADOW_NONE);
 	sw->add (*eb);
 	sw->modify_bg (Gtk::STATE_NORMAL, c);
-	_chromeMain.push_back (eb);
 	_chromeMain.push_back (sw);
 	if (Gtk::Widget* vp = sw->get_child ()) { vp->modify_bg (Gtk::STATE_NORMAL, c); _chromeMain.push_back (vp); }  // Viewport
 	return sw;
@@ -1447,7 +1526,17 @@ OxfordConsolePanel::on_eq_press (GdkEventButton* ev)
 {
 	if (!_chan || ev->button != 1) { return false; }
 	const int b = eq_dot_at (ev->x, ev->y);
-	if (b >= 0) { _eq_drag = b; eqc ().queue_draw (); return true; }
+	if (b >= 0) {
+		_eq_drag = b;
+		if (b == 5 || b == 6) {
+			/* origine du geste vertical = pente du filtre au moment du clic */
+			const bool on = (b == 5) ? _chan->hpfOn () : _chan->lpfOn ();
+			_eq_drag_y0    = ev->y;
+			_eq_drag_slope0 = on ? (int) ((b == 5) ? _chan->hpfSlope () : _chan->lpfSlope ()) : 12;
+		}
+		eqc ().queue_draw ();
+		return true;
+	}
 	return false;
 }
 
@@ -1476,17 +1565,22 @@ OxfordConsolePanel::on_eq_motion (GdkEventMotion* ev)
 	/* x -> fréquence (échelle log de l'écran) */
 	const double fmin = 20.0, fmax = 20000.0;
 	double f = fmin * std::pow (fmax / fmin, w > 0 ? ev->x / w : 0.0);
-	if (b == 5) {           /* HPF : drag = freq (borné knob 20-400) + ENGAGE le filtre */
-		if (f < 20.0)  f = 20.0;
-		if (f > 400.0) f = 400.0;
-		apply_linked ([f] (OxfordChannel& c) { c.setHPF (true, (float) f, c.hpfOn () ? c.hpfSlope () : 12.f); });   // Alt -> sélection
-		eqc ().queue_draw ();
-		return true;
-	}
-	if (b == 6) {           /* LPF : idem (1k-20k) */
-		if (f < 1000.0)  f = 1000.0;
-		if (f > 20000.0) f = 20000.0;
-		apply_linked ([f] (OxfordChannel& c) { c.setLPF (true, (float) f, c.lpfOn () ? c.lpfSlope () : 12.f); });   // Alt -> sélection
+	if (b == 5 || b == 6) {
+		/* HP/LP : X = fréquence (bornée comme le knob) et ENGAGE le filtre,
+		 * Y = PENTE — un cran de 6 dB/oct tous les 22 px, vers le HAUT = plus
+		 * raide (la pastille, elle, reste posée sur le coude du filtre). Pas plus
+		 * sensible que ça : sinon un tremblement pendant le réglage de fréquence
+		 * fait sauter la pente. */
+		const double flo = (b == 5) ? 20.0 : 1000.0;
+		const double fhi = (b == 5) ? 400.0 : 20000.0;
+		if (f < flo) f = flo;
+		if (f > fhi) f = fhi;
+		int s = _eq_drag_slope0 + 6 * (int) std::lround ((_eq_drag_y0 - ev->y) / (22.0 * kUI));
+		if (s < 6)  s = 6;
+		if (s > 36) s = 36;
+		const float slope = (float) s;
+		if (b == 5) { apply_linked ([f, slope] (OxfordChannel& c) { c.setHPF (true, (float) f, slope); }); }   // Alt -> sélection
+		else        { apply_linked ([f, slope] (OxfordChannel& c) { c.setLPF (true, (float) f, slope); }); }
 		eqc ().queue_draw ();
 		return true;
 	}

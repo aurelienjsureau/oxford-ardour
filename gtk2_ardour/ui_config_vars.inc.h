@@ -25,7 +25,7 @@ UI_CONFIG_VARIABLE (std::string, icon_set, "icon-set", "default")
  * bundlé (share/ardour9) et enregistré au démarrage (bundle_env_mingw). */
 UI_CONFIG_VARIABLE (std::string, ui_rc_file, "ui-rc-file", "clearlooks.ardoursans.rc")
 UI_CONFIG_VARIABLE (std::string, ui_font_family, "ui-font-family", "ArdourSans")
-UI_CONFIG_VARIABLE (std::string, color_file, "color-file", "oxford")
+UI_CONFIG_VARIABLE (std::string, color_file, "color-file", "oxfordamber")
 /* Oxford : identité visuelle — coins légèrement arrondis (radius 3.5 défaut)
  * + dégradé ADOUCI dans ArdourButton::build_patterns (le "bombé" 35% d'origine
  * est ramené à un modelé discret ~10%). Retour user : flat pur = trop plat. */

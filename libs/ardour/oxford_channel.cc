@@ -75,10 +75,18 @@ OxfordChannel::prepare_all ()
 	 * Le module NAM est le processor SÉPARÉ (stage Dac), visible/bypassable. */
 	std::string namPath;
 	if (_stage == OxfordBus::Dac) {
-		PBD::Searchpath sp (ARDOUR::ardour_data_search_path ());
-		sp.add_subdirectory_to_paths ("resources");
-		std::string f;
-		if (PBD::find_file (sp, "Oxford-pcm1630.nam", f)) { namPath = f; }
+		/* résolu UNE FOIS par process : les chemins de données ne bougent pas en
+		 * cours de route, et configure_io() repasse ici à chaque reconfiguration. */
+		static std::string s_namPath;
+		static bool        s_namLookedUp = false;
+		if (!s_namLookedUp) {
+			PBD::Searchpath sp (ARDOUR::ardour_data_search_path ());
+			sp.add_subdirectory_to_paths ("resources");
+			std::string f;
+			if (PBD::find_file (sp, "Oxford-pcm1630.nam", f)) { s_namPath = f; }
+			s_namLookedUp = true;
+		}
+		namPath = s_namPath;
 	}
 
 	for (auto& b : _buses) {

@@ -138,6 +138,7 @@ class MackieControlProtocol
 	bool has_instrument (std::shared_ptr<ARDOUR::Stripable>) const;
 	bool is_mapped (std::shared_ptr<ARDOUR::Stripable>) const;
 	std::shared_ptr<ARDOUR::Stripable> first_selected_stripable () const;
+	void select_relative_stripable (int delta);
 
 	void check_fader_automation_state ();
 	void update_fader_automation_state ();

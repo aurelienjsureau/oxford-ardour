@@ -2527,6 +2527,29 @@ MackieControlProtocol::stripable_selection_changed ()
 	}
 }
 
+/* Single-fader devices: banking moves the selection, and the fader follows it
+   through stripable_selection_changed(). */
+void
+MackieControlProtocol::select_relative_stripable (int delta)
+{
+	Sorted sorted = get_sorted_stripables ();
+	if (sorted.empty ()) {
+		return;
+	}
+
+	std::shared_ptr<Stripable> cur = ControlProtocol::first_selected_stripable ();
+	int idx = 0;
+	if (cur) {
+		Sorted::iterator i = std::find (sorted.begin (), sorted.end (), cur);
+		if (i != sorted.end ()) {
+			idx = i - sorted.begin ();
+		}
+	}
+
+	int target = std::max (0, std::min ((int) sorted.size () - 1, idx + delta));
+	set_stripable_selection (sorted[target]);
+}
+
 std::shared_ptr<Stripable>
 MackieControlProtocol::first_selected_stripable () const
 {

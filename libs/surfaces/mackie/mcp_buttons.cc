@@ -107,6 +107,11 @@ MackieControlProtocol::cmd_alt_release (Button &)
 LedState
 MackieControlProtocol::left_press (Button &)
 {
+	if (_device_info.single_fader_follows_selection()) {
+		select_relative_stripable (-(int) n_strips (false));
+		return on;
+	}
+
 	if (_subview->subview_mode() != MACKIE_NAMESPACE::Subview::None) {
 		return none;
 	}
@@ -141,6 +146,11 @@ MackieControlProtocol::left_release (Button &)
 LedState
 MackieControlProtocol::right_press (Button &)
 {
+	if (_device_info.single_fader_follows_selection()) {
+		select_relative_stripable ((int) n_strips (false));
+		return on;
+	}
+
 	if (_subview->subview_mode() != MACKIE_NAMESPACE::Subview::None) {
 		return none;
 	}

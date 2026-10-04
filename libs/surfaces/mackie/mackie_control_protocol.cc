@@ -2500,6 +2500,11 @@ MackieControlProtocol::stripable_selection_changed ()
 					}
 				}
 
+				/* the device may sit on any of its virtual strips: give them all the selection */
+				if (stripables.size () == 1) {
+					stripables.resize ((*si)->n_strips (false), stripables.front ());
+				}
+
 				(*si)->map_stripables (stripables);
 			}
 		}
@@ -2548,6 +2553,30 @@ MackieControlProtocol::select_relative_stripable (int delta)
 
 	int target = std::max (0, std::min ((int) sorted.size () - 1, idx + delta));
 	set_stripable_selection (sorted[target]);
+}
+
+/* X-Touch One in MC Std: CHANNEL arrows send SELECT for the strip next to the
+   one whose select LED is lit (clamped to 1..8). Only the home strip's LED is
+   ever lit, so the press is always home-1 or home+1. */
+uint32_t
+MackieControlProtocol::single_fader_home () const
+{
+	return n_strips (false) / 2 - 1;
+}
+
+void
+MackieControlProtocol::single_fader_select_press (uint32_t strip_index)
+{
+	int delta = (int) strip_index - (int) single_fader_home ();
+
+	if (delta) {
+		select_relative_stripable (delta);
+	}
+
+	PBD::Mutex::Lock lm (surfaces_lock);
+	for (Surfaces::iterator si = surfaces.begin(); si != surfaces.end(); ++si) {
+		(*si)->update_strip_selection ();
+	}
 }
 
 std::shared_ptr<Stripable>

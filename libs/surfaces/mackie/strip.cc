@@ -446,7 +446,7 @@ Strip::notify_property_changed (const PropertyChange& what_changed)
 	}
 
 	if (_select && what_changed.contains (ARDOUR::Properties::selected)) {
-		_surface->write (_select->set_state (_stripable->is_selected()));
+		_surface->write (_select->set_state (select_led ()));
 	}
 }
 
@@ -454,8 +454,18 @@ void
 Strip::update_selection_state ()
 {
 	if(_select && _stripable) {
-		_surface->write (_select->set_state (_stripable->is_selected()));
+		_surface->write (_select->set_state (select_led ()));
 	}
+}
+
+bool
+Strip::select_led () const
+{
+	if (_surface->mcp().device_info().single_fader_follows_selection()) {
+		/* not mcp().single_fader_home(): callers hold surfaces_lock, which n_strips() takes */
+		return _stripable->is_selected() && _index == _surface->n_strips (false) / 2 - 1;
+	}
+	return _stripable->is_selected();
 }
 
 void
@@ -571,6 +581,11 @@ Strip::select_event (Button&, ButtonState bs)
 			_controls_locked = !_controls_locked;
 			_surface->write (display (0, 1,_controls_locked ?  "Locked" : "Unlock"));
 			block_vpot_mode_display_for (1000);
+			return;
+		}
+
+		if (_surface->mcp().device_info().single_fader_follows_selection()) {
+			_surface->mcp().single_fader_select_press (_index);
 			return;
 		}
 

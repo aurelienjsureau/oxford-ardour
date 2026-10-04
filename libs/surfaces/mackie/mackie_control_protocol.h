@@ -139,6 +139,8 @@ class MackieControlProtocol
 	bool is_mapped (std::shared_ptr<ARDOUR::Stripable>) const;
 	std::shared_ptr<ARDOUR::Stripable> first_selected_stripable () const;
 	void select_relative_stripable (int delta);
+	void single_fader_select_press (uint32_t strip_index);
+	uint32_t single_fader_home () const;
 
 	void check_fader_automation_state ();
 	void update_fader_automation_state ();

@@ -305,7 +305,7 @@ LedState
 MackieControlProtocol::channel_left_press (Button &)
 {
 	if (_device_info.single_fader_follows_selection()) {
-		access_action ("Editor/select-prev-route");
+		select_relative_stripable (-1);
 		return on;
 	}
 
@@ -331,7 +331,7 @@ LedState
 MackieControlProtocol::channel_right_press (Button &)
 {
 	if (_device_info.single_fader_follows_selection()) {
-		access_action ("Editor/select-next-route");
+		select_relative_stripable (1);
 		return on;
 	}
 
